@@ -50,9 +50,6 @@ services:
       - database_network
     restart: unless-stopped
 
-
-
-
 volumes:
   mysql_node1_data:
     driver: local
@@ -60,7 +57,6 @@ volumes:
     driver: local
   mysql_node3_data:
     driver: local
-
 
 networks:
   database_network:
