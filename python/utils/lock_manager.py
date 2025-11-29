@@ -259,6 +259,50 @@ class DistributedLockManager:
             if conn:
                 conn.close()
     
+    def check_lock(self, resource_id: str, node: int) -> bool:
+        """
+        Check if we currently hold a valid lock on the resource.
+        Similar to check_us_lock() in reference implementation.
+        
+        Args:
+            resource_id: The resource to check
+            node: Node number to check lock on
+            
+        Returns:
+            bool: True if we hold a valid lock, False otherwise
+        """
+        lock_name = f"lock_{resource_id}"
+        
+        select_lock_sql = """
+        SELECT locked_by, lock_time 
+        FROM distributed_lock 
+        WHERE lock_name = %s
+        """
+        
+        try:
+            conn = self._get_connection(node)
+            cursor = conn.cursor(dictionary=True)
+            
+            cursor.execute(select_lock_sql, (lock_name,))
+            result = cursor.fetchone()
+            
+            cursor.close()
+            conn.close()
+            
+            if result is None:
+                print(f"[{self.current_node_id}] No lock exists on {resource_id} at Node {node}")
+                return False
+            
+            if result['locked_by'] == self.current_node_id:
+                return True
+            else:
+                print(f"[{self.current_node_id}] ✗ Lock on {resource_id} at Node {node} held by {result['locked_by']}")
+                return False
+                
+        except Exception as e:
+            print(f"[{self.current_node_id}] Error checking lock on {resource_id} at Node {node}: {e}")
+            return False
+    
     def acquire_multi_node_lock(self, resource_id: str, nodes: list, timeout: int = 30) -> bool:
         """
         Acquire locks on the same resource across multiple nodes atomically.
