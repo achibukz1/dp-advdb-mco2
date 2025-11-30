@@ -1,16 +1,37 @@
 """
+DEPRECATED: This module is deprecated and will be removed in a future version.
+
+All locking functions have been moved to python.db.db_config module.
+Please use the following from db_config instead:
+- execute_with_lock()
+- execute_multi_node_write()
+- replicate_write()
+- create_dedicated_connection()
+- check_connectivity()
+- cleanup_locks()
+
+All node configurations should now follow db_config.get_node_config() pattern.
+
 Database Manager with Distributed Lock Support
 
 Handles database operations across multiple nodes with proper distributed locking
 to ensure consistency in concurrent transactions. Works locally and on Google Cloud.
 """
 
+import warnings
 import mysql.connector
 from typing import Dict, Any, Optional, List
 from python.utils.lock_manager import DistributedLockManager
 import time
 import os
 from dotenv import load_dotenv
+
+# Show deprecation warning when imported
+warnings.warn(
+    "db_manager module is deprecated. Use locking functions from python.db.db_config instead.",
+    DeprecationWarning,
+    stacklevel=2
+)
 
 load_dotenv()
 

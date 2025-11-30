@@ -20,7 +20,7 @@ import time
 from datetime import datetime
 import pandas as pd
 from python.utils.lock_manager import DistributedLockManager
-from python.db_config import get_node_config, NODE_CONFIGS
+from python.db.db_config import get_node_config, NODE_CONFIGS
 
 class MixedReadWriteTest:
     def __init__(self):
