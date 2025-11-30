@@ -706,7 +706,7 @@ def main():
         if st.button("🚀 Run Test", type="primary", use_container_width=True):
             # Import test class
             try:
-                from case1_test import SimpleConcurrentReadTest
+                from python.case1_test import SimpleConcurrentReadTest
 
                 # Initialize test
                 test = SimpleConcurrentReadTest()
@@ -826,7 +826,6 @@ def main():
 
             except ImportError as e:
                 st.error(f"❌ Error importing test module: {str(e)}")
-                st.info("Make sure case1_test.py is in the same directory as app.py")
             except Exception as e:
                 st.error(f"❌ Test failed: {str(e)}")
                 st.exception(e)
