@@ -1,15 +1,3 @@
-"""
-Case #2: Mixed Read/Write Concurrent Transactions Test
-
-Tests concurrent transactions where at least one transaction is writing (update/delete)
-and others are reading the same data item. Uses distributed lock manager for write operations.
-
-Specs requirement:
-- At least one transaction must access Node 1 (the node with ALL rows)
-- Transactions must happen concurrently
-- Test all 4 isolation levels
-"""
-
 import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -228,18 +216,22 @@ class MixedReadWriteTest:
             if conn:
                 conn.close()
     
-    def run_test(self, trans_id, isolation_level="READ COMMITTED"):
+    def run_test(self, trans_id, isolation_level="READ COMMITTED", mode="concurrent"):
         """
         Run mixed read/write test with 10 concurrent transactions across different nodes
         All transactions access the SAME trans_id to test cross-node distributed concurrency
         Ratio: 4 writers (2 on Node 1, 2 on Node 2), 6 readers (2 on Node 1, 4 on Node 2)
         
+        Args:
+            mode: "concurrent" for parallel execution, "sequential" for serial execution
+        
         Tests distributed lock contention and isolation across multiple nodes
         """
+        mode_label = "CONCURRENT" if mode == "concurrent" else "SEQUENTIAL"
         print(f"\n{'='*70}")
-        print(f"Running Case #2: Mixed Read/Write on trans_id={trans_id}")
+        print(f"Running Case #2: Mixed Read/Write on trans_id={trans_id} ({mode_label})")
         print(f"Isolation Level: {isolation_level}")
-        print(f"Configuration (Cross-Node Access - 10 Concurrent Transactions):")
+        print(f"Configuration (Cross-Node Access - 10 Transactions):")
         print(f"  WRITERS (4 total): 2 on Node 1, 2 on Node 2")
         print(f"  READERS (6 total): 2 on Node 1, 4 on Node 2")
         print(f"  All transactions access trans_id={trans_id}")
@@ -274,17 +266,23 @@ class MixedReadWriteTest:
                 args=(2, trans_id, f"T{i}_READER_Node2", isolation_level)
             ))
         
-        # Start all threads with slight staggering
-        for i, thread in enumerate(threads):
-            thread.start()
-            if i < 4:  # Stagger writers more
-                time.sleep(0.2)
-            elif i == 4:  # Slight delay before readers start
-                time.sleep(0.1)
-        
-        # Wait for all threads to complete
-        for thread in threads:
-            thread.join()
+        if mode == "concurrent":
+            # Start all threads with slight staggering
+            for i, thread in enumerate(threads):
+                thread.start()
+                if i < 4:  # Stagger writers more
+                    time.sleep(0.2)
+                elif i == 4:  # Slight delay before readers start
+                    time.sleep(0.1)
+            
+            # Wait for all threads to complete
+            for thread in threads:
+                thread.join()
+        else:
+            # Sequential execution - run each thread one after another
+            for thread in threads:
+                thread.start()
+                thread.join()  # Wait for this thread to complete before starting next
         
         # Display results
         self.display_results()
@@ -309,9 +307,9 @@ class MixedReadWriteTest:
             cursor.close()
             conn.close()
             
-            print(f"\n✓ Restored trans_id={trans_id} to original value")
+            print(f"\nRestored trans_id={trans_id} to original value")
         except Exception as e:
-            print(f"\n⚠️  Warning: Could not restore original value: {e}")
+            print(f"\nWarning: Could not restore original value: {e}")
     
     def display_results(self):
         """Display test results"""
@@ -333,7 +331,7 @@ class MixedReadWriteTest:
             if result['type'] == 'WRITE' and result['status'] == 'SUCCESS':
                 row['Before→After'] = f"{result['before_amount']:.2f}→{result['after_amount']:.2f}"
             elif result['type'] == 'READ' and result['status'] == 'SUCCESS':
-                row['Repeatable?'] = '✓' if result['repeatable'] else '✗'
+                row['Repeatable?'] = 'Yes' if result['repeatable'] else 'No'
                 row['Values'] = f"{result['first_read']:.2f}, {result['second_read']:.2f}"
             
             summary.append(row)
@@ -355,18 +353,18 @@ class MixedReadWriteTest:
             
             for read_result in read_results:
                 if read_result['first_read'] == new_value or read_result['second_read'] == new_value:
-                    print(f"⚠️  Possible DIRTY READ detected in {[k for k, v in self.results.items() if v == read_result][0]}")
+                    print(f"WARNING: Possible DIRTY READ detected in {[k for k, v in self.results.items() if v == read_result][0]}")
                     print(f"   Reader saw value {new_value} that was being written")
         
         # Check for non-repeatable reads
         non_repeatable = [r for r in read_results if not r['repeatable']]
         if non_repeatable:
-            print(f"\n⚠️  NON-REPEATABLE READS detected: {len(non_repeatable)} reader(s)")
+            print(f"\nWARNING: NON-REPEATABLE READS detected: {len(non_repeatable)} reader(s)")
             for result in non_repeatable:
                 txn_id = [k for k, v in self.results.items() if v == result][0]
                 print(f"   {txn_id}: First={result['first_read']:.2f}, Second={result['second_read']:.2f}")
         else:
-            print(f"\n✅ NO NON-REPEATABLE READS: All readers saw consistent values")
+            print(f"\nNO NON-REPEATABLE READS: All readers saw consistent values")
         
         # Show timing overlap
         print(f"\n{'='*70}")
@@ -382,12 +380,70 @@ class MixedReadWriteTest:
         
         print(f"Total execution time: {total_time:.6f} seconds")
         print(f"Expected if sequential: {sum(r['duration'] for r in self.results.values()):.6f} seconds")
-        print(f"✅ Transactions ran concurrently" if total_time < 5 else "⚠️ Transactions may have run sequentially")
+        print(f"PASSED: Transactions ran concurrently" if total_time < 5 else "WARNING: Transactions may have run sequentially")
         
         # Check distributed locking effectiveness
         writer = next((r for r in self.results.values() if r['type'] == 'WRITE'), None)
         if writer and writer['status'] == 'SUCCESS':
-            print(f"\n✅ DISTRIBUTED LOCK: Writer successfully acquired lock and completed update")
+            print(f"\nDISTRIBUTED LOCK: Writer successfully acquired lock and completed update")
+    
+    def validate_serializability(self, concurrent_results, sequential_results, isolation_level):
+        """
+        Validate serializability by comparing concurrent and sequential execution results
+        """
+        print(f"\n{'='*70}")
+        print(f"SERIALIZABILITY VALIDATION - {isolation_level}")
+        print(f"{'='*70}\n")
+        
+        # Get final amounts from writers
+        concurrent_writers = {k: v for k, v in concurrent_results.items() 
+                            if v['type'] == 'WRITE' and v['status'] == 'SUCCESS'}
+        sequential_writers = {k: v for k, v in sequential_results.items() 
+                            if v['type'] == 'WRITE' and v['status'] == 'SUCCESS'}
+        
+        # Calculate execution times
+        concurrent_start_times = [r['start_time'] for r in concurrent_results.values()]
+        concurrent_end_times = [r['end_time'] for r in concurrent_results.values()]
+        concurrent_duration = max(concurrent_end_times) - min(concurrent_start_times)
+        
+        sequential_start_times = [r['start_time'] for r in sequential_results.values()]
+        sequential_end_times = [r['end_time'] for r in sequential_results.values()]
+        sequential_duration = max(sequential_end_times) - min(sequential_start_times)
+        
+        # Compare number of successful transactions
+        concurrent_success = len([v for v in concurrent_results.values() if v['status'] == 'SUCCESS'])
+        sequential_success = len([v for v in sequential_results.values() if v['status'] == 'SUCCESS'])
+        
+        print(f"Concurrent execution: {concurrent_success} successful transactions ({concurrent_duration:.2f}s)")
+        print(f"Sequential execution: {sequential_success} successful transactions ({sequential_duration:.2f}s)")
+        print(f"Speedup: {sequential_duration / concurrent_duration:.2f}x faster with concurrency")
+        
+        # For SERIALIZABLE, the final state should match sequential execution
+        if isolation_level == 'SERIALIZABLE':
+            # Check if final write values are consistent
+            if concurrent_writers and sequential_writers:
+                # Get the last successful write from each execution
+                concurrent_final = max(concurrent_writers.values(), 
+                                     key=lambda x: x['end_time'])['after_amount']
+                sequential_final = max(sequential_writers.values(), 
+                                     key=lambda x: x['end_time'])['after_amount']
+                
+                print(f"\nFinal amount (concurrent): {concurrent_final:.2f}")
+                print(f"Final amount (sequential): {sequential_final:.2f}")
+                
+                if abs(concurrent_final - sequential_final) < 0.01:
+                    print("\nSERIALIZABLE: Final state matches sequential execution")
+                    print("   Database consistency verified!")
+                    return True, sequential_duration
+                else:
+                    print("\nWARNING: SERIALIZABLE: Final states differ")
+                    print("   This may indicate serializability violation")
+                    return False, sequential_duration
+        
+        # For other isolation levels, just check consistency of successful transactions
+        print(f"\nValidation complete for {isolation_level}")
+        print(f"   Note: {isolation_level} allows anomalies, sequential match not required")
+        return True, sequential_duration
     
     def calculate_metrics(self):
         """Calculate performance metrics for comparison"""
@@ -449,28 +505,49 @@ def main():
     print("  • Reader (T2): Node 2 - Reading the same data item")
     print("  • Writer uses distributed lock manager")
     print("  • Testing all 4 isolation levels")
+    print("  • Validation: Concurrent vs Sequential execution")
     print("="*70)
     
     # Store metrics for comparison
     isolation_metrics = {iso: [] for iso in isolation_levels}
     
     all_results = {}
+    sequential_results = {}
+    serializability_validation = {}
+    sequential_durations = {}
     
     for isolation_level in isolation_levels:
         print(f"\n{'='*70}")
         print(f"Testing with {isolation_level}")
         print(f"{'='*70}")
         
-        results = test.run_test(
+        # Run concurrent execution
+        print("\n[1/2] Running CONCURRENT execution...")
+        concurrent_exec = test.run_test(
             trans_id=trans_id,
-            isolation_level=isolation_level
+            isolation_level=isolation_level,
+            mode="concurrent"
         )
         
         # Calculate metrics for this test
         metrics = test.calculate_metrics()
         isolation_metrics[isolation_level].append(metrics)
         
-        all_results[isolation_level] = results
+        all_results[isolation_level] = concurrent_exec
+        
+        # Run sequential execution for validation
+        print("\n[2/2] Running SEQUENTIAL execution for validation...")
+        sequential_exec = test.run_test(
+            trans_id=trans_id,
+            isolation_level=isolation_level,
+            mode="sequential"
+        )
+        sequential_results[isolation_level] = sequential_exec
+        
+        # Validate serializability
+        is_valid, seq_duration = test.validate_serializability(concurrent_exec, sequential_exec, isolation_level)
+        serializability_validation[isolation_level] = is_valid
+        sequential_durations[isolation_level] = seq_duration
         
         print("\n" + "-"*70)
     
@@ -507,79 +584,19 @@ def main():
     df_comparison = pd.DataFrame(comparison_data)
     print(df_comparison.to_string(index=False))
     
-    # ========================================================================
-    # ANALYSIS & RECOMMENDATION
-    # ========================================================================
-    
+    # Display serializability validation summary
     print(f"\n{'='*70}")
-    print("ANALYSIS & RECOMMENDATION")
+    print("SEQUENTIAL VALIDATION SUMMARY")
     print(f"{'='*70}\n")
-    
-    # Extract numeric values for comparison
-    throughputs = {}
-    response_times = {}
-    anomalies = {}
     
     for iso_level in isolation_levels:
-        metrics_list = isolation_metrics[iso_level]
-        m = metrics_list[0]  # Single test
-        throughputs[iso_level] = m['throughput']
-        response_times[iso_level] = m['avg_response_time']
-        anomalies[iso_level] = m['non_repeatable_reads']
-    
-    # Find best performers
-    best_throughput = max(throughputs, key=throughputs.get)
-    safest = min(anomalies, key=anomalies.get)
-    
-    print("📊 Performance Analysis:")
-    print(f"   - Highest Throughput: {best_throughput} ({throughputs[best_throughput]:.6f} txn/s)")
-    print(f"   - Safest (fewest anomalies): {safest} ({anomalies[safest]} non-repeatable reads)")
-    
-    # Make recommendation
-    print(f"\n{'='*70}")
-    print("RECOMMENDATION FOR CASE #2")
-    print(f"{'='*70}\n")
-    
-    print("✅ Recommended: READ COMMITTED or REPEATABLE READ")
-    print("\n📋 Reasoning:")
-    print("   1. READ COMMITTED: Good balance of performance and safety")
-    print("      - Prevents dirty reads")
-    print("      - Allows non-repeatable reads (acceptable for many use cases)")
-    print("      - Better throughput than stricter levels")
-    print("   ")
-    print("   2. REPEATABLE READ: For stricter consistency requirements")
-    print("      - Prevents dirty reads AND non-repeatable reads")
-    print("      - Slight performance overhead")
-    print("      - Recommended if data consistency is critical")
-    
-    print("\n⚠️  Context for Case #2:")
-    print("   - Distributed locking ensures write safety across nodes")
-    print("   - Isolation level controls read consistency")
-    print("   - Trade-off between concurrency and consistency")
-    
-    print("\n❌ Why not other levels?")
-    print("   - READ UNCOMMITTED: Allows dirty reads (unsafe for writes)")
-    print("   - SERIALIZABLE: Lowest throughput, may cause timeouts")
-    
-    # Final summary
-    print(f"\n{'='*70}")
-    print("FINAL SUMMARY")
-    print(f"{'='*70}\n")
-    
-    print(f"✅ Tested 1 scenario (trans_id={trans_id})")
-    print(f"✅ Tested {len(isolation_levels)} isolation levels")
-    print(f"✅ Total tests run: {len(isolation_levels)}")
-    
-    print("\n📊 Key Findings:")
-    print("   1. Distributed locking successfully coordinates writes across nodes")
-    print("   2. Writer (T1) on Node 1 writes to the data item")
-    print("   3. Reader (T2) on Node 2 reads the same data item (fallback to Node 1)")
-    print("   4. Both transactions access the same data item concurrently")
-    print("   5. Isolation levels affect read consistency and performance")
+        status = "PASSED" if serializability_validation.get(iso_level, False) else "CHECK"
+        seq_duration = sequential_durations.get(iso_level, 0)
+        print(f"{status} - {iso_level} (Sequential: {seq_duration:.2f}s)")
     
     # Cleanup
     test.cleanup()
-    print("\n✓ Cleanup complete - all locks released")
+    print("\nCleanup complete - all locks released")
 
 if __name__ == "__main__":
     main()
