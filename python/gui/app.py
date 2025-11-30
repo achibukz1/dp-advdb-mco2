@@ -351,24 +351,32 @@ def main():
         st.title("Update Transaction (Write Operation)")
 
         st.markdown("""
-        Modify an existing transaction record. The system will automatically find 
-        and update the record across all nodes.
+        Modify an existing transaction record. Updates are first applied to Node 1 (central node)
+        and then replicated to the appropriate partition node.
         """)
 
-        # Step 1: Find the transaction to update
-        st.subheader("Step 1: Find Transaction to Update")
+        st.subheader("Update Transaction")
 
         col1, col2 = st.columns(2)
 
         with col1:
             trans_id = st.number_input("Transaction ID", min_value=1, value=1)
+            new_amount = st.number_input("New Amount", min_value=0.0, value=1000.0, step=100.0)
+            new_type = st.selectbox("New Type", ["Credit", "Debit"])
 
         with col2:
-            st.info("System will search across all nodes automatically")
+            new_operation = st.text_input("New Operation", placeholder="e.g., Credit in Cash")
+            isolation_level = st.selectbox(
+                "Isolation Level",
+                ["READ UNCOMMITTED", "READ COMMITTED", "REPEATABLE READ", "SERIALIZABLE"],
+                index=1,
+                key='update_isolation'
+            )
 
-        if st.button("🔍 Search"):
+        # Show transaction info button
+        if st.button("🔍 Preview Transaction"):
             try:
-                # Try to find transaction (search central node first)
+                # Search for transaction on Node 1 (central node)
                 search_query = f"SELECT * FROM trans WHERE trans_id = {trans_id}"
                 found_data = fetch_data(search_query, node=1)
 
@@ -378,99 +386,82 @@ def main():
                     st.success(f"✅ Found transaction")
                     st.dataframe(found_data)
 
-                    # Store in session state for update form
-                    st.session_state.current_trans = found_data.iloc[0].to_dict()
-                    # Determine which node this account belongs to
-                    st.session_state.update_node = get_node_for_account(
-                        int(st.session_state.current_trans['account_id'])
-                    )
+            except Exception as e:
+                st.error(f"❌ Error searching: {str(e)}")
+
+        # Update button
+        if st.button("💾 Update Transaction", type="primary"):
+            start_time = time.time()
+
+            try:
+                with st.spinner(f"Verifying transaction exists..."):
+                    # First verify the transaction exists and get account_id
+                    search_query = f"SELECT * FROM trans WHERE trans_id = {trans_id}"
+                    found_data = fetch_data(search_query, node=1)
+
+                    if found_data.empty:
+                        st.error(f"❌ Transaction ID {trans_id} not found")
+                    else:
+                        # Get account_id to determine target partition node
+                        account_id = int(found_data.iloc[0]['account_id'])
+                        target_node = get_node_for_account(account_id)
+
+                        # Build UPDATE query
+                        update_query = f"""
+                        UPDATE trans 
+                        SET amount = {new_amount}, 
+                            type = '{new_type}', 
+                            operation = '{new_operation}'
+                        WHERE trans_id = {trans_id}
+                        """
+
+                        with st.spinner(f"Updating transaction on Node 1 (central node)..."):
+                            # Execute update on Node 1 first (central node)
+                            result = execute_query(update_query, node=1,
+                                                 isolation_level=isolation_level)
+
+                        # Simulate replication to partition node
+                        st.info("🔄 Replicating to partition node...")
+                        time.sleep(0.5)  # Simulate replication delay
+
+                        # Replicate to partition node (Node 2 or Node 3)
+                        if target_node != 1:
+                            execute_query(update_query, node=target_node, isolation_level=isolation_level)
+
+                        duration = time.time() - start_time
+
+                        log_transaction(
+                            operation='UPDATE',
+                            query=update_query,
+                            node=1,  # Primary update on Node 1
+                            isolation_level=isolation_level,
+                            status='SUCCESS',
+                            duration=duration
+                        )
+
+                        st.success(f"✅ Transaction updated successfully in {duration:.3f}s")
+                        st.success(f"✅ Replicated to Node {target_node}")
+
+                        # Show updated data
+                        with st.expander("📝 View Updated Record"):
+                            verify_query = f"SELECT * FROM trans WHERE trans_id = {trans_id}"
+                            updated_data = fetch_data(verify_query, node=1)
+                            st.dataframe(updated_data)
+                            st.caption(f"Data updated on Node 1 and replicated to Node {target_node}")
 
             except Exception as e:
-                st.error(f"❌ Error: {str(e)}")
+                duration = time.time() - start_time
 
-        # Step 2: Update form (only show if transaction found)
-        if 'current_trans' in st.session_state:
-            st.markdown("---")
-            st.subheader("Step 2: Update Values")
-
-            current = st.session_state.current_trans
-
-            col1, col2 = st.columns(2)
-
-            with col1:
-                new_amount = st.number_input("New Amount",
-                                            value=float(current['amount']),
-                                            step=100.0)
-                new_type = st.selectbox("New Type",
-                                       ["Credit", "Debit"],
-                                       index=0 if current['type'] == 'Credit' else 1)
-
-            with col2:
-                new_operation = st.text_input("New Operation",
-                                             value=current['operation'])
-                isolation_level = st.selectbox(
-                    "Isolation Level",
-                    ["READ UNCOMMITTED", "READ COMMITTED", "REPEATABLE READ", "SERIALIZABLE"],
-                    index=1,
-                    key='update_isolation'
+                log_transaction(
+                    operation='UPDATE',
+                    query=update_query if 'update_query' in locals() else f"UPDATE trans WHERE trans_id = {trans_id}",
+                    node=1,
+                    isolation_level=isolation_level,
+                    status='FAILED',
+                    duration=duration
                 )
 
-            if st.button("💾 Update Transaction", type="primary"):
-                update_query = f"""
-                UPDATE trans 
-                SET amount = {new_amount}, 
-                    type = '{new_type}', 
-                    operation = '{new_operation}'
-                WHERE trans_id = {trans_id}
-                """
-
-                start_time = time.time()
-                update_node = st.session_state.update_node
-
-                try:
-                    with st.spinner(f"Updating transaction on Node {update_node}..."):
-                        # Update on partition node
-                        result = execute_query(update_query, node=update_node,
-                                    isolation_level=isolation_level)
-
-                    with st.spinner("🔄 Replicating update to central node..."):
-                        time.sleep(0.3)
-
-                        # Update central node if different
-                        if update_node != 1:
-                            execute_query(update_query, node=1, isolation_level=isolation_level)
-
-                    duration = time.time() - start_time
-
-                    log_transaction(
-                        operation='UPDATE',
-                        query=update_query,
-                        node=update_node,
-                        isolation_level=isolation_level,
-                        status='SUCCESS',
-                        duration=duration
-                    )
-
-                    st.success(f"✅ Transaction updated successfully in {duration:.3f}s")
-                    st.success("✅ Replicated to other nodes")
-
-                    # Clear session state
-                    del st.session_state.current_trans
-                    del st.session_state.update_node
-
-                except Exception as e:
-                    duration = time.time() - start_time
-
-                    log_transaction(
-                        operation='UPDATE',
-                        query=update_query,
-                        node=update_node,
-                        isolation_level=isolation_level,
-                        status='FAILED',
-                        duration=duration
-                    )
-
-                    st.error(f"❌ Error: {str(e)}")
+                st.error(f"❌ Error: {str(e)}")
 
     # ============================================================================
     # DELETE TRANSACTION (WRITE OPERATION)
@@ -479,11 +470,17 @@ def main():
         st.title("Delete Transaction (Write Operation)")
 
         st.markdown("""
-        Remove a transaction record from the database. The system will automatically 
-        delete from all nodes.
+        Remove a transaction record from the database. Deletions are first applied to Node 1 (central node)
+        and then replicated to the appropriate partition node.
         """)
 
-        st.subheader("Find Transaction to Delete")
+        # Check if we just completed a deletion
+        if 'last_deleted_id' in st.session_state:
+            st.success(f"✅ Transaction {st.session_state.last_deleted_id} was successfully deleted!")
+            st.info("You can now delete another transaction.")
+            del st.session_state.last_deleted_id
+
+        st.subheader("Delete Transaction")
 
         col1, col2 = st.columns(2)
 
@@ -498,76 +495,102 @@ def main():
                 key='delete_isolation'
             )
 
-        if st.button("🔍 Find Transaction"):
+        # Show transaction info button
+        if st.button("🔍 Preview Transaction"):
             try:
+                # Search for transaction on Node 1 (central node)
                 search_query = f"SELECT * FROM trans WHERE trans_id = {trans_id}"
                 found_data = fetch_data(search_query, node=1)
 
                 if found_data.empty:
-                    st.warning(f"⚠️ Transaction ID {trans_id} not found")
+                    st.error(f"❌ Transaction ID {trans_id} not found in the database")
+                    st.info("This transaction may have already been deleted or never existed.")
                 else:
                     st.success(f"✅ Found transaction")
                     st.dataframe(found_data)
-                    st.session_state.delete_trans = found_data.iloc[0].to_dict()
-                    st.session_state.delete_node = get_node_for_account(
-                        int(st.session_state.delete_trans['account_id'])
-                    )
+                    # Store that we found this transaction
+                    st.session_state.preview_trans_id = trans_id
+
             except Exception as e:
+                st.error(f"❌ Error searching: {str(e)}")
+
+        st.markdown("---")
+        st.warning("⚠️ This action cannot be undone!")
+
+        # Delete button
+        if st.button("🗑️ Delete Transaction", type="primary"):
+            start_time = time.time()
+            delete_query = None
+
+            try:
+                with st.spinner(f"Verifying transaction exists..."):
+                    # First verify the transaction exists and get account_id
+                    search_query = f"SELECT * FROM trans WHERE trans_id = {trans_id}"
+                    found_data = fetch_data(search_query, node=1)
+
+                    if found_data.empty:
+                        st.error(f"❌ Transaction ID {trans_id} not found in the database")
+                        st.warning("This transaction may have already been deleted or never existed.")
+                        st.info("💡 Use the Preview button to check if a transaction exists before deleting.")
+                        st.stop()  # Stop execution here
+                    else:
+                        # Get account_id to determine target partition node
+                        account_id = int(found_data.iloc[0]['account_id'])
+                        target_node = get_node_for_account(account_id)
+
+                        # Build DELETE query
+                        delete_query = f"DELETE FROM trans WHERE trans_id = {trans_id}"
+
+                        with st.spinner(f"Deleting transaction from Node 1 (central node)..."):
+                            # Execute delete on Node 1 first (central node)
+                            result = execute_query(delete_query, node=1,
+                                                 isolation_level=isolation_level)
+
+                        # Simulate replication to partition node
+                        st.info("🔄 Replicating deletion to partition node...")
+                        time.sleep(0.5)  # Simulate replication delay
+
+                        # Replicate to partition node (Node 2 or Node 3)
+                        if target_node != 1:
+                            execute_query(delete_query, node=target_node, isolation_level=isolation_level)
+
+                        duration = time.time() - start_time
+
+                        log_transaction(
+                            operation='DELETE',
+                            query=delete_query,
+                            node=1,  # Primary delete on Node 1
+                            isolation_level=isolation_level,
+                            status='SUCCESS',
+                            duration=duration
+                        )
+
+                        st.success(f"✅ Transaction deleted successfully in {duration:.3f}s")
+                        st.success(f"✅ Deletion replicated to Node {target_node}")
+
+                        # Show confirmation
+                        st.info(f"🗑️ Transaction {trans_id} has been removed from all nodes")
+
+                        # Store the deleted ID and trigger a rerun to clear the form
+                        st.session_state.last_deleted_id = trans_id
+                        if 'preview_trans_id' in st.session_state:
+                            del st.session_state.preview_trans_id
+                        time.sleep(1.5)  # Brief pause to show success messages
+                        st.rerun()
+
+            except Exception as e:
+                duration = time.time() - start_time
+
+                log_transaction(
+                    operation='DELETE',
+                    query=delete_query if delete_query else f"DELETE FROM trans WHERE trans_id = {trans_id}",
+                    node=1,
+                    isolation_level=isolation_level,
+                    status='FAILED',
+                    duration=duration
+                )
+
                 st.error(f"❌ Error: {str(e)}")
-
-        # Delete button (only show if transaction found)
-        if 'delete_trans' in st.session_state:
-            st.markdown("---")
-            st.warning("⚠️ This action cannot be undone!")
-
-            if st.button("🗑️ Delete Transaction", type="primary"):
-                delete_query = f"DELETE FROM trans WHERE trans_id = {trans_id}"
-                start_time = time.time()
-                delete_node = st.session_state.delete_node
-
-                try:
-                    with st.spinner("Deleting transaction..."):
-                        # Delete from partition node
-                        execute_query(delete_query, node=delete_node, isolation_level=isolation_level)
-
-                        st.info("🔄 Replicating deletion to other nodes...")
-                        time.sleep(0.5)
-
-                        # Delete from central node
-                        if delete_node != 1:
-                            execute_query(delete_query, node=1, isolation_level=isolation_level)
-
-                    duration = time.time() - start_time
-
-                    log_transaction(
-                        operation='DELETE',
-                        query=delete_query,
-                        node=delete_node,
-                        isolation_level=isolation_level,
-                        status='SUCCESS',
-                        duration=duration
-                    )
-
-                    st.success(f"✅ Transaction deleted successfully in {duration:.3f}s")
-                    st.success("✅ Deletion replicated to all nodes")
-
-                    # Clear session state
-                    del st.session_state.delete_trans
-                    del st.session_state.delete_node
-
-                except Exception as e:
-                    duration = time.time() - start_time
-
-                    log_transaction(
-                        operation='DELETE',
-                        query=delete_query,
-                        node=delete_node,
-                        isolation_level=isolation_level,
-                        status='FAILED',
-                        duration=duration
-                    )
-
-                    st.error(f"❌ Error: {str(e)}")
 
     # ============================================================================
     # TRANSACTION LOG (ANALYSIS)
