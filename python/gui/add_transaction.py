@@ -84,82 +84,121 @@ def render(get_node_for_account, log_transaction):
         rollback_button = st.button("↩️ Rollback", type="secondary", use_container_width=True, key="rollback_insert")
 
     if commit_button:
+        from python.utils.recovery_manager import replicate_transaction
+        
         add_transactions = [t for t in st.session_state.active_transactions if t.get('page') == 'add']
         if add_transactions:
             try:
                 committed_count = 0
                 indices_to_remove = []
 
-                # Track which trans_ids we've already processed to avoid duplicate locking
-                processed_trans_ids = set()
-
-                # Collect indices and commit transactions
+                # Process transactions one by one
                 for txn in add_transactions:
                     idx = st.session_state.active_transactions.index(txn)
                     indices_to_remove.append(idx)
 
                     conn = st.session_state.transaction_connections[idx]
                     cursor = st.session_state.transaction_cursors[idx]
-
-                    # Re-acquire lock for replication phase (only once per trans_id)
-                    trans_id = txn.get('trans_id')
-                    resource_id = "insert_trans"
-                    lock_acquired = False
-
-                    # Only acquire lock once per unique transaction
-                    if trans_id not in processed_trans_ids:
-                        try:
-                            lock_acquired = st.session_state.lock_manager.acquire_lock(
-                                resource_id, node=1, timeout=30
-                            )
-
-                            if not lock_acquired:
-                                st.error(f"Failed to acquire replication lock for trans_id={trans_id}")
-                                conn.rollback()
-                                cursor.close()
-                                conn.close()
-                                continue
-
-                            processed_trans_ids.add(trans_id)
-
-                            # Commit the transaction on the target node (while holding lock)
+                    
+                    # Get transaction details
+                    primary_node = txn['node']
+                    account_id = txn['account_id']
+                    query = txn['query']
+                    isolation_level = txn['isolation_level']
+                    
+                    try:
+                        # Commit on primary node first
+                        with st.spinner(f"Committing on Node {primary_node}..."):
                             conn.commit()
                             cursor.close()
                             conn.close()
-
-                            # Log the transaction
-                            duration = time.time() - txn['start_time']
-                            log_transaction(
-                                operation=txn['operation'],
-                                query=txn['query'],
-                                node=txn['node'],
-                                isolation_level=txn['isolation_level'],
-                                status='SUCCESS',
-                                duration=duration
-                            )
-                            committed_count += 1
-
-                        finally:
-                            # Release lock AFTER replication completes
-                            if lock_acquired:
-                                st.session_state.lock_manager.release_lock(resource_id, node=1)
-                    else:
-                        # This is a replica of an already-processed transaction
-                        conn.commit()
-                        cursor.close()
-                        conn.close()
+                        
+                        st.info(f"Transaction committed on Node {primary_node}")
+                        
+                        # Get current node status for replication decisions
+                        current_node_status = st.session_state.node_pinger.get_status()
+                        partition_node_for_account = get_node_for_account(account_id)
+                        
+                        # Determine replication targets based on primary node
+                        replication_results = []
+                        
+                        if primary_node == 1:
+                            # If primary is Node 1, replicate to partition node
+                            target_node = partition_node_for_account
+                            if target_node != 1:
+                                with st.spinner(f"Replicating to Node {target_node} (partition node)..."):
+                                    result = replicate_transaction(query, primary_node, target_node, isolation_level)
+                                    replication_results.append((target_node, result))
+                                
+                        else:
+                            # Primary is Node 2/3: replicate to Node 1 (and potentially other nodes)
+                            # Always try to replicate to Node 1 (central)
+                            with st.spinner(f"Replicating to Node 1 (central)..."):
+                                result = replicate_transaction(query, primary_node, 1, isolation_level)
+                                replication_results.append((1, result))
+                            
+                            # If primary is not the natural partition node, also replicate to partition node
+                            if primary_node != partition_node_for_account and partition_node_for_account != 1:
+                                with st.spinner(f"Replicating to Node {partition_node_for_account} (partition node)..."):
+                                    result = replicate_transaction(query, primary_node, partition_node_for_account, isolation_level)
+                                    replication_results.append((partition_node_for_account, result))
+                        
+                        # Display replication results
+                        successful_replications = 0
+                        failed_replications = 0
+                        
+                        for target_node, result in replication_results:
+                            if result['status'] == 'error':
+                                st.error(f"Replication to Node {target_node} failed: {result['message']}")
+                                if result['logged']:
+                                    st.warning(f"Recovery logged: {result['recovery_action']}")
+                                else:
+                                    st.error(f"Recovery logging failed: {result['recovery_action']}")
+                                failed_replications += 1
+                            else:
+                                st.success(f"Successfully replicated to Node {target_node}")
+                                successful_replications += 1
+                        
+                        # Show replication summary
+                        if replication_results:
+                            if failed_replications > 0:
+                                st.info(f"Replication Summary: {successful_replications} successful, {failed_replications} failed (logged for recovery)")
+                            else:
+                                st.success(f"All replications successful ({successful_replications}/{len(replication_results)})")
+                        
+                        # Log successful transaction
+                        duration = time.time() - txn['start_time']
+                        log_transaction(
+                            operation=txn['operation'],
+                            query=txn['query'],
+                            node=txn['node'],
+                            isolation_level=txn['isolation_level'],
+                            status='SUCCESS',
+                            duration=duration
+                        )
                         committed_count += 1
+                        
+                    except Exception as commit_error:
+                        st.error(f"Commit failed on Node {primary_node}: {str(commit_error)}")
+                        try:
+                            conn.rollback()
+                            cursor.close()
+                            conn.close()
+                        except:
+                            pass
 
-                # Remove in reverse order to maintain correct indices
+                # Remove processed transactions
                 for idx in sorted(indices_to_remove, reverse=True):
                     del st.session_state.active_transactions[idx]
                     del st.session_state.transaction_connections[idx]
                     del st.session_state.transaction_cursors[idx]
 
-                st.success(f"✅ {committed_count} transaction(s) committed successfully!")
-                st.toast(f"{committed_count} transaction(s) committed successfully")
+                if committed_count > 0:
+                    st.success(f"{committed_count} transaction(s) committed successfully!")
+                    st.toast(f"{committed_count} transaction(s) committed successfully")
+                    
             except Exception as e:
-                st.error(f"Commit failed: {str(e)}")
+                st.error(f"Commit process failed: {str(e)}")
         else:
             st.warning("No active INSERT transaction to commit")
 
@@ -196,49 +235,99 @@ def render(get_node_for_account, log_transaction):
             st.warning("No active INSERT transaction to rollback")
 
     if insert_button:
-        # Determine target node based on account_id
-        target_node = get_node_for_account(account_id)
-
         start_time = time.time()
         lock_acquired = False
         resource_id = "insert_trans"  # Global lock for insert operations
 
         try:
+            # Check node status using server pinger
+            node_status = st.session_state.node_pinger.get_status()
+            
+            # Determine primary node with robust fallback logic
+            partition_node = get_node_for_account(account_id)
+            
+            # Priority: Node 1 > Partition Node > Any Available Node
+            if node_status.get(1, False):  # Node 1 is online (highest priority)
+                primary_node = 1
+                st.info("🎯 Using Node 1 (Central) as primary node")
+            elif node_status.get(partition_node, False):  # Partition node is online
+                primary_node = partition_node
+                st.warning(f"⚠️ Node 1 offline - Using Node {partition_node} (partition node) as primary")
+            else:
+                # Find any available node as last resort
+                primary_node = None
+                for node in [1, 2, 3]:
+                    if node_status.get(node, False):
+                        primary_node = node
+                        break
+                
+                if primary_node is None:
+                    st.error("❌ All nodes are offline. Cannot proceed with transaction.")
+                    st.stop()
+                else:
+                    st.error(f"🚨 Both Node 1 and Node {partition_node} are offline - Using Node {primary_node} as emergency primary")
+            
+            # Show node status
+            with st.expander("Current Node Status"):
+                status_data = []
+                for node in [1, 2, 3]:
+                    is_online = node_status.get(node, False)
+                    if node == primary_node:
+                        role = "Primary (Active)"
+                    elif node == 1 and not is_online:
+                        role = "Central (Offline - will recover)"
+                    elif node == partition_node and node != primary_node:
+                        if is_online:
+                            role = "Partition (Standby)"
+                        else:
+                            role = "Partition (Offline - will recover)"
+                    else:
+                        role = "Replica" if is_online else "Offline (will recover)"
+                    
+                    status_data.append({
+                        'Node': f"Node {node}",
+                        'Status': 'Online' if is_online else 'Offline',
+                        'Role': role
+                    })
+                st.dataframe(pd.DataFrame(status_data))
+
             # Acquire distributed lock before inserting
             with st.spinner(f"Acquiring distributed lock..."):
+                # Try to acquire lock on available nodes
+                lock_node = primary_node if node_status.get(primary_node, False) else None
+                if not lock_node:
+                    # Find any available node for locking
+                    for node in [1, 2, 3]:
+                        if node_status.get(node, False):
+                            lock_node = node
+                            break
+                
+                if not lock_node:
+                    st.error("No nodes available for locking. Please check node connectivity.")
+                    st.stop()
+                
                 lock_acquired = st.session_state.lock_manager.acquire_lock(
-                    resource_id, node=1, timeout=30
+                    resource_id, node=lock_node, timeout=30
                 )
 
                 if not lock_acquired:
                     st.error("Failed to acquire lock. Another user may be inserting. Please try again.")
                     st.stop()
 
-            with st.spinner(f"Checking all nodes for highest trans_id..."):
+            with st.spinner(f"Checking available nodes for highest trans_id..."):
                 # Query all available nodes for MAX(trans_id) and get the highest value
                 max_result = get_max_trans_id_multi_node()
 
                 if max_result['status'] == 'failed':
-                    st.error(f"❌ Cannot proceed: {max_result['error']}")
-                    st.warning("⚠️ Servers are down. Please check node availability and try again.")
-
-                    # Show node status
-                    with st.expander("📊 Node Status"):
-                        status_data = []
-                        for node in [1, 2, 3]:
-                            is_available = node in max_result['available_nodes']
-                            status_data.append({
-                                'Node': f"Node {node}",
-                                'Status': '✅ Available' if is_available else '❌ Down'
-                            })
-                        st.dataframe(pd.DataFrame(status_data))
+                    st.error(f"Cannot proceed: {max_result['error']}")
+                    st.warning("All servers are down. Please check node availability and try again.")
                     st.stop()
 
                 # Get the next trans_id from the highest value across all nodes
                 next_trans_id = max_result['max_trans_id'] + 1
 
                 # Show which nodes were queried
-                with st.expander("📊 Multi-Node Query Results"):
+                with st.expander("Multi-Node Query Results"):
                     st.info(f"Queried {len(max_result['available_nodes'])} available node(s)")
                     node_data = []
                     for node, value in max_result['node_values'].items():
@@ -249,59 +338,45 @@ def render(get_node_for_account, log_transaction):
                     st.dataframe(pd.DataFrame(node_data))
                     st.success(f"Selected highest trans_id: {max_result['max_trans_id']} → Next: {next_trans_id}")
 
-            with st.spinner(f"Preparing insert transaction..."):
-                # Create dedicated connection and start transaction
-                conn = create_dedicated_connection(target_node, isolation_level)
+            with st.spinner(f"Preparing insert transaction on Node {primary_node}..."):
+                # Build INSERT query with trans_id
+                insert_query = f"""
+                INSERT INTO trans (trans_id, account_id, newdate, type, operation, amount, k_symbol)
+                VALUES ({next_trans_id}, {account_id}, '{trans_date}', '{trans_type}', '{operation}', {amount}, '{k_symbol}')
+                """
+
+                # Create dedicated connection to primary node only
+                conn = create_dedicated_connection(primary_node, isolation_level)
                 cursor = conn.cursor(dictionary=True)
 
                 # Set isolation level and start transaction
                 cursor.execute(f"SET TRANSACTION ISOLATION LEVEL {isolation_level}")
                 cursor.execute("START TRANSACTION")
 
-                # Build INSERT query with trans_id (already determined from multi-node query)
-                insert_query = f"""
-                INSERT INTO trans (trans_id, account_id, newdate, type, operation, amount, k_symbol)
-                VALUES ({next_trans_id}, {account_id}, '{trans_date}', '{trans_type}', '{operation}', {amount}, '{k_symbol}')
-                """
+                # Execute insert but don't commit yet
+                cursor.execute(insert_query)
 
-                # Prepare transactions on Node 1 (central) and target partition node (2 or 3 based on account_id)
-                partition_node = get_node_for_account(account_id)
-                nodes_to_write = [1, partition_node]
-
-                for node in nodes_to_write:
-                    conn_temp = create_dedicated_connection(node, isolation_level)
-                    cursor_temp = conn_temp.cursor(dictionary=True)
-
-                    # Set isolation level and start transaction
-                    cursor_temp.execute(f"SET TRANSACTION ISOLATION LEVEL {isolation_level}")
-                    cursor_temp.execute("START TRANSACTION")
-
-                    # Execute insert but don't commit yet
-                    cursor_temp.execute(insert_query)
-
-                    # Append connection and transaction to lists
-                    st.session_state.transaction_connections.append(conn_temp)
-                    st.session_state.transaction_cursors.append(cursor_temp)
-                    st.session_state.active_transactions.append({
-                        'page': 'add',
-                        'node': node,
-                        'operation': 'INSERT',
-                        'query': insert_query,
-                        'isolation_level': isolation_level,
-                        'start_time': start_time,
-                        'trans_id': next_trans_id,
-                        'account_id': account_id
-                    })
+                # Store single transaction for commit/rollback
+                st.session_state.transaction_connections.append(conn)
+                st.session_state.transaction_cursors.append(cursor)
+                st.session_state.active_transactions.append({
+                    'page': 'add',
+                    'node': primary_node,
+                    'operation': 'INSERT',
+                    'query': insert_query,
+                    'isolation_level': isolation_level,
+                    'start_time': start_time,
+                    'trans_id': next_trans_id,
+                    'account_id': account_id
+                })
 
             duration = time.time() - start_time
 
-            # DON'T log yet - will log when user commits
-
-            st.success(f"✅ Insert transaction prepared with trans_id={next_trans_id} on Node 1 and Node {partition_node} in {duration:.3f}s")
-            st.warning("⏳ Transaction active - Click 'Commit' to finalize insertion or 'Rollback' to cancel")
+            st.success(f"Insert transaction prepared with trans_id={next_trans_id} on Node {primary_node} in {duration:.3f}s")
+            st.warning("Transaction active - Click 'Commit' to finalize insertion or 'Rollback' to cancel")
 
             # Show preview
-            with st.expander("📝 Pending Insert"):
+            with st.expander("Pending Insert"):
                 preview_data = pd.DataFrame([{
                     'trans_id': next_trans_id,
                     'account_id': account_id,
@@ -312,7 +387,14 @@ def render(get_node_for_account, log_transaction):
                     'k_symbol': k_symbol
                 }])
                 st.dataframe(preview_data)
-                st.caption(f"Insert prepared on Node 1 (central) and Node {partition_node} ({'even' if partition_node == 2 else 'odd'} accounts) - not yet committed")
+                
+                # Show replication strategy based on primary node
+                if primary_node == 1:
+                    st.caption(f"Insert prepared on Node 1 (central) - will replicate to Node {partition_node} ({'even' if partition_node == 2 else 'odd'} accounts) on commit")
+                elif primary_node == partition_node:
+                    st.caption(f"Insert prepared on Node {primary_node} (natural partition for {'even' if partition_node == 2 else 'odd'} accounts) - will replicate to Node 1 (central) on commit")
+                else:
+                    st.caption(f"Insert prepared on Node {primary_node} (emergency primary) - will replicate to Node 1 (central) and Node {partition_node} (natural partition) on commit")
 
         except Exception as e:
             # Don't log failed transactions - only log successful commits
@@ -321,4 +403,4 @@ def render(get_node_for_account, log_transaction):
         finally:
             # Always release the lock
             if lock_acquired:
-                st.session_state.lock_manager.release_lock(resource_id, node=1)
+                st.session_state.lock_manager.release_lock(resource_id, node=lock_node)
