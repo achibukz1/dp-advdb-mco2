@@ -15,7 +15,6 @@ from datetime import datetime
 from dotenv import load_dotenv
 import os
 from typing import Dict, Any, List
-from python.utils.lock_manager import DistributedLockManager
 
 # Load environment variables from .env file
 load_dotenv()
@@ -572,7 +571,7 @@ def test_connection(node):
 # Initialize the distributed lock manager with node configurations
 _lock_manager = None
 
-def _get_lock_manager(current_node_id: str = "app") -> DistributedLockManager:
+def _get_lock_manager(current_node_id: str = "app"):
     """
     Get or create the distributed lock manager instance.
 
@@ -582,6 +581,9 @@ def _get_lock_manager(current_node_id: str = "app") -> DistributedLockManager:
     Returns:
         DistributedLockManager instance
     """
+    # Lazy import to avoid Streamlit module caching issues
+    from python.utils.lock_manager import DistributedLockManager
+
     global _lock_manager
     if _lock_manager is None:
         # Build node configs for lock manager
