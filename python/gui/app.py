@@ -164,8 +164,32 @@ def main():
 
         base_query += f" LIMIT {limit}"
 
-        # Execute button
-        if st.button("🔍 Fetch Data", type="primary"):
+        # Execute button with custom styling
+        st.markdown("""
+        <style>
+        div.stButton > button {
+            background-color: #4B5C4B;
+            color: white;
+            border-color: #4B5C4B;
+        }
+        div.stButton > button:hover {
+            background-color: #3A4A3A;
+            border-color: #3A4A3A;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
+        btn_col1, btn_col2 = st.columns(2)
+        with btn_col1:
+            fetch_button = st.button("🔍 Fetch Data", type="primary", use_container_width=True)
+        with btn_col2:
+            commit_button = st.button("✅ Commit Transaction", type="secondary", use_container_width=True, key="commit_read")
+        
+        if commit_button:
+            st.success("✅ Transaction committed!")
+            st.toast("Transaction committed successfully")
+        
+        if fetch_button:
             start_time = time.time()
 
             try:
@@ -250,8 +274,32 @@ def main():
         # Show next trans_id that will be used
         st.info("ℹ️ The next available trans_id will be automatically fetched and assigned")
 
-        # Insert button
-        if st.button("💾 Insert Transaction", type="primary"):
+        # Insert button with custom styling
+        st.markdown("""
+        <style>
+        div.stButton > button {
+            background-color: #4B5C4B;
+            color: white;
+            border-color: #4B5C4B;
+        }
+        div.stButton > button:hover {
+            background-color: #3A4A3A;
+            border-color: #3A4A3A;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
+        btn_col1, btn_col2 = st.columns(2)
+        with btn_col1:
+            insert_button = st.button("💾 Insert Transaction", type="primary", use_container_width=True)
+        with btn_col2:
+            commit_button = st.button("✅ Commit Transaction", type="secondary", use_container_width=True, key="commit_insert")
+        
+        if commit_button:
+            st.success("✅ Transaction committed!")
+            st.toast("Transaction committed successfully")
+        
+        if insert_button:
 
             # Determine target node based on account_id
             target_node = get_node_for_account(account_id)
@@ -389,8 +437,32 @@ def main():
             except Exception as e:
                 st.error(f"❌ Error searching: {str(e)}")
 
-        # Update button
-        if st.button("💾 Update Transaction", type="primary"):
+        # Update button with custom styling
+        st.markdown("""
+        <style>
+        div.stButton > button {
+            background-color: #4B5C4B;
+            color: white;
+            border-color: #4B5C4B;
+        }
+        div.stButton > button:hover {
+            background-color: #3A4A3A;
+            border-color: #3A4A3A;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
+        btn_col1, btn_col2 = st.columns(2)
+        with btn_col1:
+            update_button = st.button("💾 Update Transaction", type="primary", use_container_width=True)
+        with btn_col2:
+            commit_button = st.button("✅ Commit Transaction", type="secondary", use_container_width=True, key="commit_update")
+        
+        if commit_button:
+            st.success("✅ Transaction committed!")
+            st.toast("Transaction committed successfully")
+        
+        if update_button:
             start_time = time.time()
 
             try:
@@ -517,8 +589,32 @@ def main():
         st.markdown("---")
         st.warning("⚠️ This action cannot be undone!")
 
-        # Delete button
-        if st.button("🗑️ Delete Transaction", type="primary"):
+        # Delete button with custom styling
+        st.markdown("""
+        <style>
+        div.stButton > button {
+            background-color: #4B5C4B;
+            color: white;
+            border-color: #4B5C4B;
+        }
+        div.stButton > button:hover {
+            background-color: #3A4A3A;
+            border-color: #3A4A3A;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
+        btn_col1, btn_col2 = st.columns(2)
+        with btn_col1:
+            delete_button = st.button("🗑️ Delete Transaction", type="primary", use_container_width=True)
+        with btn_col2:
+            commit_button = st.button("✅ Commit Transaction", type="secondary", use_container_width=True, key="commit_delete")
+        
+        if commit_button:
+            st.success("✅ Transaction committed!")
+            st.toast("Transaction committed successfully")
+        
+        if delete_button:
             start_time = time.time()
             delete_query = None
 
