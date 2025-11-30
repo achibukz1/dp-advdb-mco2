@@ -9,6 +9,7 @@ import json
 
 from python.db.db_config import fetch_data, execute_query, get_node_config
 from python.utils.lock_manager import DistributedLockManager
+from python.utils.server_ping import NodePinger
 
 # Import page modules
 import python.gui.view_transactions as view_transactions
@@ -47,6 +48,11 @@ if 'lock_manager' not in st.session_state:
         node_configs,
         current_node_id="streamlit_app"
     )
+
+# Initialize and start node pinger
+if 'node_pinger' not in st.session_state:
+    st.session_state.node_pinger = NodePinger(interval=5)
+    st.session_state.node_pinger.start()
 
 # Sidebar
 st.sidebar.title("Database Operations")
