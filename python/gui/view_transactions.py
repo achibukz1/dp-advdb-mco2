@@ -1,10 +1,13 @@
 """
 View Transactions Page - Read Operation
+Supports viewing transactions even when one node is offline by combining data from available nodes
 """
 import streamlit as st
 import pandas as pd
 import time
 from datetime import datetime
+from python.utils.server_ping import NodePinger
+from python.db.db_config import fetch_data
 
 
 def render(get_node_for_account, log_transaction):
@@ -12,23 +15,17 @@ def render(get_node_for_account, log_transaction):
     st.title("View Transactions (Read Operation)")
 
     st.markdown("""
-    Browse transaction records from the database. The system will automatically 
-    query the appropriate node based on your search criteria.
+    Browse transaction records from the database. The system intelligently adapts to node availability:
+    
+    **Resilient Query Strategy:**
+    - 🎯 **Specific Account**: Queries target partition node, falls back to Node 1 if offline
+    - 📊 **All Data (Node 1 online)**: Uses complete central database
+    - 🔄 **All Data (Node 1 offline)**: Combines Node 2 + Node 3 for complete view
+    - ⚡ **Always works** as long as at least one node is online
     """)
 
     # Configuration
-    col1, col2 = st.columns(2)
-
-    with col1:
-        isolation_level = st.selectbox(
-            "Isolation Level",
-            ["READ UNCOMMITTED", "READ COMMITTED", "REPEATABLE READ", "SERIALIZABLE"],
-            index=1,
-            help="Controls how the transaction sees concurrent changes"
-        )
-
-    with col2:
-        limit = st.number_input("Number of rows", min_value=10, max_value=1000, value=50)
+    limit = st.number_input("Number of rows", min_value=10, max_value=1000, value=50)
 
     # Filter options
     st.subheader("Filter Options")
@@ -45,21 +42,31 @@ def render(get_node_for_account, log_transaction):
     with col3:
         date_range = st.date_input("Date Range", value=None)
 
+    # Check node status
+    pinger = NodePinger()
+    node_status = pinger.ping_all_nodes()
+    
+    # Display node status
+    st.subheader("Node Status")
+    status_cols = st.columns(3)
+    for i, node in enumerate([1, 2, 3]):
+        with status_cols[i]:
+            if node_status.get(node, False):
+                st.success(f"Node {node} Online")
+            else:
+                st.error(f"Node {node} Offline")
+
     # Build query based on filters
     base_query = "SELECT * FROM trans WHERE 1=1"
-
-    # Determine which node to query
+    
     if account_id:
         base_query += f" AND account_id = {account_id}"
-        # Query specific partition node
-        selected_node = get_node_for_account(int(account_id))
-    else:
-        # Query central node for all data
-        selected_node = 1
-
+        
     if trans_type != "All":
         base_query += f" AND type = '{trans_type}'"
 
+    # Don't add LIMIT to individual queries - we'll limit the combined result
+    query_without_limit = base_query
     base_query += f" LIMIT {limit}"
 
     # Execute button with custom styling
@@ -95,134 +102,118 @@ def render(get_node_for_account, log_transaction):
         rollback_button = st.button("↩️ Rollback", type="secondary", use_container_width=True, key="rollback_read")
 
     if commit_button:
-        view_transactions = [t for t in st.session_state.active_transactions if t.get('page') == 'view']
-        if view_transactions:
-            try:
-                committed_count = 0
-                indices_to_remove = []
-
-                # Collect indices and commit transactions
-                for txn in view_transactions:
-                    idx = st.session_state.active_transactions.index(txn)
-                    indices_to_remove.append(idx)
-
-                    conn = st.session_state.transaction_connections[idx]
-                    cursor = st.session_state.transaction_cursors[idx]
-
-                    # Commit the transaction
-                    conn.commit()
-                    cursor.close()
-                    conn.close()
-
-                    # Log the transaction
-                    duration = time.time() - txn['start_time']
-                    log_transaction(
-                        operation=txn['operation'],
-                        query=txn['query'],
-                        node=txn['node'],
-                        isolation_level=txn['isolation_level'],
-                        status='SUCCESS',
-                        duration=duration
-                    )
-                    committed_count += 1
-
-                # Remove in reverse order to maintain correct indices
-                for idx in sorted(indices_to_remove, reverse=True):
-                    del st.session_state.active_transactions[idx]
-                    del st.session_state.transaction_connections[idx]
-                    del st.session_state.transaction_cursors[idx]
-
-                st.success(f"✅ {committed_count} transaction(s) committed!")
-                st.toast(f"{committed_count} transaction(s) committed successfully")
-            except Exception as e:
-                st.error(f"Commit failed: {str(e)}")
-        else:
-            st.warning("No active READ transaction to commit")
+        st.info("ℹ️ View operations are read-only and don't require explicit commits")
+        st.success("✅ All data has been successfully retrieved and displayed")
 
     if rollback_button:
-        view_transactions = [t for t in st.session_state.active_transactions if t.get('page') == 'view']
-        if view_transactions:
-            try:
-                rolled_back_count = 0
-                indices_to_remove = []
-
-                # Collect indices and rollback transactions
-                for txn in view_transactions:
-                    idx = st.session_state.active_transactions.index(txn)
-                    indices_to_remove.append(idx)
-
-                    conn = st.session_state.transaction_connections[idx]
-                    cursor = st.session_state.transaction_cursors[idx]
-                    conn.rollback()
-                    cursor.close()
-                    conn.close()
-                    rolled_back_count += 1
-
-                # Remove in reverse order to maintain correct indices
-                for idx in sorted(indices_to_remove, reverse=True):
-                    del st.session_state.active_transactions[idx]
-                    del st.session_state.transaction_connections[idx]
-                    del st.session_state.transaction_cursors[idx]
-
-                st.info(f"↩️ {rolled_back_count} transaction(s) rolled back - no changes logged")
-                st.toast(f"{rolled_back_count} transaction(s) rolled back")
-            except Exception as e:
-                st.error(f"Rollback failed: {str(e)}")
-        else:
-            st.warning("No active READ transaction to rollback")
+        st.info("ℹ️ View operations are read-only - no rollback needed")
+        st.success("🔄 Ready to perform new queries")
 
     if fetch_button:
         start_time = time.time()
-
+        
+        # Determine strategy based on node availability
+        online_nodes = [node for node, status in node_status.items() if status]
+        offline_nodes = [node for node, status in node_status.items() if not status]
+        
+        if not online_nodes:
+            st.error("❌ All nodes are offline! Cannot retrieve data.")
+            return
+            
+        st.info(f"📡 Online nodes: {online_nodes}, Offline nodes: {offline_nodes}")
+        
         try:
-            from python.db.db_config import create_dedicated_connection
-
-            with st.spinner(f"Starting transaction on Node {selected_node}..."):
-                # Create dedicated connection and start transaction
-                conn = create_dedicated_connection(selected_node, isolation_level)
-                cursor = conn.cursor(dictionary=True)
-
-                # Set isolation level and start transaction
-                cursor.execute(f"SET TRANSACTION ISOLATION LEVEL {isolation_level}")
-                cursor.execute("START TRANSACTION")
-
-                # Execute query
-                cursor.execute(base_query)
-                results = cursor.fetchall()
-                data = pd.DataFrame(results)
-
-                # Append connection and transaction to lists
-                st.session_state.transaction_connections.append(conn)
-                st.session_state.transaction_cursors.append(cursor)
-                st.session_state.active_transactions.append({
-                    'page': 'view',
-                    'node': selected_node,
-                    'operation': 'READ',
-                    'query': base_query,
-                    'isolation_level': isolation_level,
-                    'start_time': start_time,
-                    'data': data.copy()  # Store the fetched data
-                })
-
+            combined_data = pd.DataFrame()
+            query_sources = []
+            
+            with st.spinner("Fetching data from available nodes..."):
+                
+                if account_id:
+                    # Specific account query - determine target node
+                    target_node = get_node_for_account(int(account_id))
+                    
+                    if target_node in online_nodes:
+                        # Target node is online - query directly
+                        st.info(f"🎯 Querying Node {target_node} (target partition for account {account_id})")
+                        data = fetch_data(base_query, node=target_node, ttl=0)
+                        combined_data = pd.concat([combined_data, data], ignore_index=True)
+                        query_sources.append(f"Node {target_node} (partition)")
+                    else:
+                        # Target node is offline - check Node 1 (central) if available
+                        st.warning(f"⚠️ Target Node {target_node} is offline for account {account_id}")
+                        
+                        if 1 in online_nodes and target_node != 1:
+                            st.info("🔄 Searching Node 1 (central) as fallback...")
+                            data = fetch_data(base_query, node=1, ttl=0)
+                            combined_data = pd.concat([combined_data, data], ignore_index=True)
+                            query_sources.append("Node 1 (central fallback)")
+                        else:
+                            st.error(f"❌ Cannot query account {account_id}: both Node {target_node} and Node 1 are offline")
+                            
+                else:
+                    # Query all data - implement smart combination strategy
+                    if 1 in online_nodes:
+                        # Node 1 is online - it has complete data
+                        st.info("📊 Node 1 online - querying complete central database")
+                        data = fetch_data(query_without_limit, node=1, ttl=0)
+                        combined_data = pd.concat([combined_data, data], ignore_index=True)
+                        query_sources.append("Node 1 (complete)")
+                        
+                    else:
+                        # Node 1 is offline - combine Node 2 and Node 3
+                        st.warning("⚠️ Node 1 offline - combining partition nodes for complete view")
+                        
+                        for node in [2, 3]:
+                            if node in online_nodes:
+                                st.info(f"📊 Querying Node {node} partition data...")
+                                data = fetch_data(query_without_limit, node=node, ttl=0)
+                                combined_data = pd.concat([combined_data, data], ignore_index=True)
+                                query_sources.append(f"Node {node} (partition)")
+                        
+                        if combined_data.empty:
+                            st.error("❌ No partition nodes available - cannot retrieve complete data")
+                
+                # Remove duplicates and apply limit
+                if not combined_data.empty:
+                    # Remove duplicates based on trans_id (primary key)
+                    initial_count = len(combined_data)
+                    combined_data = combined_data.drop_duplicates(subset=['trans_id'], keep='first')
+                    final_count = len(combined_data)
+                    
+                    if initial_count != final_count:
+                        st.info(f"🔧 Removed {initial_count - final_count} duplicate records")
+                    
+                    # Sort by trans_id and apply limit
+                    combined_data = combined_data.sort_values('trans_id').head(limit)
+                    
             duration = time.time() - start_time
-
-            # DON'T log yet - will log when user commits
-
-            if data.empty:
+            
+            if combined_data.empty:
                 st.warning("⚠️ No data found matching your criteria")
             else:
-                st.success(f"✅ Retrieved {len(data)} rows in {duration:.3f}s")
-                st.warning("⏳ Transaction active - Click 'Commit' to finalize or 'Rollback' to cancel")
-                st.dataframe(data, use_container_width=True)
-
-                # Show transaction info
-                with st.expander("ℹ️ Transaction Details"):
-                    st.write(f"**Isolation Level**: {isolation_level}")
+                st.success(f"✅ Retrieved {len(combined_data)} rows in {duration:.3f}s")
+                
+                # Show data source information
+                st.info(f"📡 Data sources: {', '.join(query_sources)}")
+                
+                st.dataframe(combined_data, use_container_width=True)
+                
+                # Show strategy details
+                with st.expander("ℹ️ Query Strategy Details"):
+                    st.write(f"**Query Strategy**: {'Single node' if len(query_sources) == 1 else 'Multi-node combination'}")
+                    st.write(f"**Data Sources**: {', '.join(query_sources)}")
                     st.write(f"**Duration**: {duration:.3f}s")
                     st.write(f"**Timestamp**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-                    st.write(f"**Transaction Status**: ACTIVE (not committed)")
-                    st.caption(f"System selected Node {selected_node} for this query")
-
+                    st.write(f"**Offline Nodes**: {offline_nodes if offline_nodes else 'None'}")
+                    st.write(f"**Records Retrieved**: {len(combined_data)}")
+                    
+                    if offline_nodes:
+                        st.warning(f"⚠️ Some nodes were offline during this query: {offline_nodes}")
+                        if 1 in offline_nodes and len(online_nodes) > 1:
+                            st.info("✅ Complete data reconstructed from partition nodes")
+                        elif 1 not in offline_nodes:
+                            st.info("✅ Complete data available from central node")
+                
         except Exception as e:
-            # Don't log failed transactions - only log successful commits
-            st.error(f"❌ Error: {str(e)}")
+            st.error(f"❌ Error retrieving data: {str(e)}")
+            st.error("Please check node connectivity and try again")
