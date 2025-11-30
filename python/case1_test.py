@@ -1,47 +1,29 @@
-import mysql.connector
 import threading
 import time
 from datetime import datetime
 import pandas as pd
+from db_config import get_db_connection
 
 class SimpleConcurrentReadTest:
     def __init__(self):
         self.results = {}
         self.lock = threading.Lock()
         
-        # Database configs from your docker-compose
-        self.nodes = {
-            'node1': {
-                'host': 'localhost',
-                'port': 3306,
-                'user': 'user',
-                'password': 'rootpass',
-                'database': 'node1_db'
-            },
-            'node2': {
-                'host': 'localhost',
-                'port': 3307,
-                'user': 'user',
-                'password': 'rootpass',
-                'database': 'node2_db'
-            },
-            'node3': {
-                'host': 'localhost',
-                'port': 3308,
-                'user': 'user',
-                'password': 'rootpass',
-                'database': 'node3_db'
-            }
+        # Node numbers mapped to names for backward compatibility
+        self.node_map = {
+            'node1': 1,
+            'node2': 2,
+            'node3': 3
         }
     
     def read_transaction(self, node_name, query, transaction_id, isolation_level):
         """Execute a read transaction on specified node"""
         start_time = time.time()
-        config = self.nodes[node_name]
-        
+        node_num = self.node_map[node_name]
+
         try:
-            # Connect to database
-            conn = mysql.connector.connect(**config)
+            # Connect to database using db_config
+            conn = get_db_connection(node_num)
             cursor = conn.cursor(dictionary=True)
             
             # Set isolation level
