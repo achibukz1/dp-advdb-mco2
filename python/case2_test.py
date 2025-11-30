@@ -20,35 +20,19 @@ import time
 from datetime import datetime
 import pandas as pd
 from python.utils.lock_manager import DistributedLockManager
+from python.db_config import get_node_config, NODE_CONFIGS
 
 class MixedReadWriteTest:
     def __init__(self):
         self.results = {}
         self.lock = threading.Lock()
         
-        # Database configs from your docker-compose
+        # Get database configs from db_config.py
+        # Build node_configs dict for lock manager
         self.node_configs = {
-            1: {
-                'host': 'localhost',
-                'port': 3306,
-                'user': 'user',
-                'password': 'rootpass',
-                'database': 'node1_db'
-            },
-            2: {
-                'host': 'localhost',
-                'port': 3307,
-                'user': 'user',
-                'password': 'rootpass',
-                'database': 'node2_db'
-            },
-            3: {
-                'host': 'localhost',
-                'port': 3308,
-                'user': 'user',
-                'password': 'rootpass',
-                'database': 'node3_db'
-            }
+            1: get_node_config(1),
+            2: get_node_config(2),
+            3: get_node_config(3)
         }
         
         # Initialize distributed lock manager
@@ -246,45 +230,57 @@ class MixedReadWriteTest:
     
     def run_test(self, trans_id, isolation_level="READ COMMITTED"):
         """
-        Run mixed read/write test with concurrent transactions
+        Run mixed read/write test with 10 concurrent transactions across different nodes
+        All transactions access the SAME trans_id to test cross-node distributed concurrency
+        Ratio: 4 writers (2 on Node 1, 2 on Node 2), 6 readers (2 on Node 1, 4 on Node 2)
         
-        Configuration:
-        - Writer on Node 1 (Central node with ALL rows)
-        - Reader on Node 1 (Same physical data - tests lock contention and isolation levels)
-        Both access the same data item (trans_id)
+        Tests distributed lock contention and isolation across multiple nodes
         """
         print(f"\n{'='*70}")
         print(f"Running Case #2: Mixed Read/Write on trans_id={trans_id}")
         print(f"Isolation Level: {isolation_level}")
-        print(f"Configuration:")
-        print(f"  - Writer (T1): Node 1 - Writing to trans_id={trans_id}")
-        print(f"  - Reader (T2): Node 1 - Reading trans_id={trans_id} (same data item, same node)")
+        print(f"Configuration (Cross-Node Access - 10 Concurrent Transactions):")
+        print(f"  WRITERS (4 total): 2 on Node 1, 2 on Node 2")
+        print(f"  READERS (6 total): 2 on Node 1, 4 on Node 2")
+        print(f"  All transactions access trans_id={trans_id}")
         print(f"{'='*70}\n")
         
         self.results = {}  # Reset results
         threads = []
         
-        # Create transactions
-        # Writer on Node 1 (Central node with all data)
-        writer_thread = threading.Thread(
-            target=self.write_transaction,
-            args=(1, trans_id, 99999.99, "T1_WRITER_Node1", isolation_level)
-        )
+        # Create 4 writer threads - 2 on Node 1, 2 on Node 2
+        for i in range(1, 3):
+            threads.append(threading.Thread(
+                target=self.write_transaction,
+                args=(1, trans_id, 10000.00 + i*1111.11, f"T{i}_WRITER_Node1", isolation_level)
+            ))
         
-        # Reader on Node 1 (same node, same physical data - creates lock contention)
-        reader_thread = threading.Thread(
-            target=self.read_transaction,
-            args=(1, trans_id, "T2_READER_Node1", isolation_level)
-        )
+        for i in range(3, 5):
+            threads.append(threading.Thread(
+                target=self.write_transaction,
+                args=(2, trans_id, 10000.00 + i*1111.11, f"T{i}_WRITER_Node2", isolation_level)
+            ))
         
-        threads = [writer_thread, reader_thread]
+        # Create 6 reader threads - 2 on Node 1, 4 on Node 2
+        for i in range(5, 7):
+            threads.append(threading.Thread(
+                target=self.read_transaction,
+                args=(1, trans_id, f"T{i}_READER_Node1", isolation_level)
+            ))
         
-        # Start writer first to lock the row
-        writer_thread.start()
-        time.sleep(0.5)  # Let writer lock the row first
+        for i in range(7, 11):
+            threads.append(threading.Thread(
+                target=self.read_transaction,
+                args=(2, trans_id, f"T{i}_READER_Node2", isolation_level)
+            ))
         
-        # Start reader (will encounter locked row)
-        reader_thread.start()
+        # Start all threads with slight staggering
+        for i, thread in enumerate(threads):
+            thread.start()
+            if i < 4:  # Stagger writers more
+                time.sleep(0.2)
+            elif i == 4:  # Slight delay before readers start
+                time.sleep(0.1)
         
         # Wait for all threads to complete
         for thread in threads:
@@ -293,8 +289,9 @@ class MixedReadWriteTest:
         # Display results
         self.display_results()
         
-        # Restore original value
+        # Restore original value on both nodes
         self.restore_original_value(trans_id, 1)
+        self.restore_original_value(trans_id, 2)
         
         return self.results
     
