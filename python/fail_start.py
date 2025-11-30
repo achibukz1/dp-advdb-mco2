@@ -28,6 +28,8 @@ Test Cases:
 """
 
 import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import mysql.connector
 from python.db.db_config import get_node_config, USE_CLOUD_SQL
 
