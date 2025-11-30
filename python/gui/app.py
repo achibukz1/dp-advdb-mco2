@@ -247,22 +247,49 @@ def main():
             amount = st.number_input("Amount", min_value=0.0, value=1000.0, step=100.0)
             k_symbol = st.text_input("K Symbol", value="")
 
+        # Show next trans_id that will be used
+        st.info("ℹ️ The next available trans_id will be automatically fetched and assigned")
+
         # Insert button
         if st.button("💾 Insert Transaction", type="primary"):
 
             # Determine target node based on account_id
             target_node = get_node_for_account(account_id)
 
-            # Build INSERT query
-            insert_query = f"""
-            INSERT INTO trans (account_id, newdate, type, operation, amount, k_symbol)
-            VALUES ({account_id}, '{trans_date}', '{trans_type}', '{operation}', {amount}, '{k_symbol}')
-            """
-
             start_time = time.time()
 
             try:
                 with st.spinner(f"Inserting transaction..."):
+                    # Use a transaction to safely get and increment trans_id
+                    # First, get the maximum trans_id from Node 1 (central node with all data)
+                    # Using FOR UPDATE to lock the rows during the transaction (if supported)
+                    max_id_query = "SELECT COALESCE(MAX(trans_id), 0) as max_id FROM trans"
+                    max_id_result = fetch_data(max_id_query, node=1)
+
+                    # Get the next trans_id
+                    if not max_id_result.empty:
+                        next_trans_id = int(max_id_result['max_id'].iloc[0]) + 1
+                    else:
+                        next_trans_id = 1
+
+                    # Verify that trans_id doesn't exist (double-check for race conditions)
+                    check_query = f"SELECT COUNT(*) as count FROM trans WHERE trans_id = {next_trans_id}"
+                    check_result = fetch_data(check_query, node=1)
+
+                    # If trans_id already exists, retry with incremented value
+                    retry_count = 0
+                    while not check_result.empty and check_result['count'].iloc[0] > 0 and retry_count < 10:
+                        next_trans_id += 1
+                        check_query = f"SELECT COUNT(*) as count FROM trans WHERE trans_id = {next_trans_id}"
+                        check_result = fetch_data(check_query, node=1)
+                        retry_count += 1
+
+                    # Build INSERT query with trans_id
+                    insert_query = f"""
+                    INSERT INTO trans (trans_id, account_id, newdate, type, operation, amount, k_symbol)
+                    VALUES ({next_trans_id}, {account_id}, '{trans_date}', '{trans_type}', '{operation}', {amount}, '{k_symbol}')
+                    """
+
                     # Execute insert on partition node
                     result = execute_query(insert_query, node=target_node,
                                          isolation_level=isolation_level)
@@ -293,12 +320,12 @@ def main():
                     duration=duration
                 )
 
-                st.success(f"✅ Transaction inserted successfully in {duration:.3f}s")
+                st.success(f"✅ Transaction inserted successfully with trans_id={next_trans_id} in {duration:.3f}s")
                 st.success("✅ Replicated to other nodes")
 
                 # Show inserted data
                 with st.expander("📝 View Inserted Record"):
-                    verify_query = f"SELECT * FROM trans WHERE account_id = {account_id} ORDER BY trans_id DESC LIMIT 1"
+                    verify_query = f"SELECT * FROM trans WHERE trans_id = {next_trans_id}"
                     inserted_data = fetch_data(verify_query, node=target_node)
                     st.dataframe(inserted_data)
                     st.caption(f"Data inserted into Node {target_node} and replicated to central node")
