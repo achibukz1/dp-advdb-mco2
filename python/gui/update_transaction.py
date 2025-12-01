@@ -261,7 +261,22 @@ def render(get_node_for_account, log_transaction):
         resource_id = f"trans_{trans_id}"  # Lock specific to this transaction
 
         try:
-            # Check node status using server pinger
+            # Step 1: Execute global recovery with checkpoints
+            with st.spinner("Processing pending recovery logs..."):
+                from python.utils.recovery_manager import execute_global_recovery
+                recovery_result = execute_global_recovery()
+                
+                if recovery_result.get('lock_acquired', False):
+                    if recovery_result['total_logs'] > 0:
+                        st.success(f"Processed {recovery_result['recovered']} recovery logs, {recovery_result['failed']} failed")
+                        if recovery_result['failed'] > 0:
+                            st.warning(f"{recovery_result['failed']} recovery logs failed - check system logs")
+                    else:
+                        st.info("No new recovery logs to process")
+                else:
+                    st.info("Recovery already running by another process")
+            
+            # Step 2: Check node status using server pinger
             node_status = st.session_state.node_pinger.get_status()
             
             # Acquire distributed lock across all available nodes before updating

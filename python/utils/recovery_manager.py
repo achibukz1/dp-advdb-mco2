@@ -4,6 +4,7 @@ Handles the 4 case studies for distributed database recovery
 """
 
 import hashlib
+import os
 import time
 from datetime import datetime
 from typing import List, Dict, Optional
@@ -549,6 +550,305 @@ class RecoveryManager:
                 connection.close()
     
     def get_global_recovery_status(self) -> Dict:
+        """Get global recovery status across all nodes"""
+        connection = None
+        cursor = None
+        try:
+            connection = self.get_db_connection()
+            cursor = connection.cursor(dictionary=True)
+            
+            # Get checkpoint information
+            cursor.execute("""
+                SELECT node_id, last_processed_log_id
+                FROM recovery_checkpoints
+                WHERE node_id IN (1, 2, 3)
+                ORDER BY node_id
+            """)
+            
+            checkpoints = cursor.fetchall()
+            return {
+                'status': 'success',
+                'checkpoints': checkpoints,
+                'timestamp': datetime.now().isoformat()
+            }
+            
+        except Error as e:
+            return {
+                'status': 'error',
+                'message': str(e),
+                'timestamp': datetime.now().isoformat()
+            }
+        finally:
+            if cursor:
+                cursor.close()
+            if connection:
+                connection.close()
+    def create_checkpoint_table_if_not_exists(self):
+        """Create global checkpoint table if it doesn't exist"""
+        connection = None
+        cursor = None
+        try:
+            connection = self.get_db_connection()
+            cursor = connection.cursor()
+            
+            create_table_sql = """
+                CREATE TABLE IF NOT EXISTS recovery_checkpoints (
+                    node_id INT PRIMARY KEY,
+                    last_processed_log_id INT DEFAULT 0
+                )
+            """
+            cursor.execute(create_table_sql)
+            
+            # Initialize checkpoints for all nodes
+            for node in [1, 2, 3]:
+                cursor.execute("""
+                    INSERT IGNORE INTO recovery_checkpoints (node_id, last_processed_log_id) 
+                    VALUES (%s, 0)
+                """, (node,))
+            
+            connection.commit()
+            print("Recovery checkpoint table initialized")
+            
+        except Error as e:
+            print(f"Error creating checkpoint table: {e}")
+        finally:
+            if cursor:
+                cursor.close()
+            if connection:
+                connection.close()
+    
+    def acquire_global_recovery_lock(self, timeout_seconds=30) -> bool:
+        """Acquire global recovery lock to prevent concurrent recovery operations"""
+        connection = None
+        cursor = None
+        try:
+            connection = self.get_db_connection()
+            cursor = connection.cursor()
+            
+            # Try to acquire lock by inserting a special lock record
+            # Create lock record if not exists (node_id = 0 is reserved for locking)
+            cursor.execute("""
+                INSERT IGNORE INTO recovery_checkpoints (node_id, last_processed_log_id) 
+                VALUES (0, -1)
+            """)
+            
+            # Try to update the lock record to claim it
+            cursor.execute("""
+                UPDATE recovery_checkpoints 
+                SET last_processed_log_id = %s 
+                WHERE node_id = 0 AND last_processed_log_id = -1
+            """, (os.getpid(),))  # Use process ID as lock identifier
+            
+            connection.commit()
+            return cursor.rowcount > 0
+            
+        except Error as e:
+            print(f"Error acquiring recovery lock: {e}")
+            return False
+        finally:
+            if cursor:
+                cursor.close()
+            if connection:
+                connection.close()
+    
+    def release_global_recovery_lock(self):
+        """Release global recovery lock"""
+        connection = None
+        cursor = None
+        try:
+            connection = self.get_db_connection()
+            cursor = connection.cursor()
+            
+            # Reset the lock record back to -1 (available)
+            cursor.execute("""
+                UPDATE recovery_checkpoints 
+                SET last_processed_log_id = -1 
+                WHERE node_id = 0 AND last_processed_log_id = %s
+            """, (os.getpid(),))
+            
+            connection.commit()
+            
+        except Error as e:
+            print(f"Error releasing recovery lock: {e}")
+        finally:
+            if cursor:
+                cursor.close()
+            if connection:
+                connection.close()
+    
+    def get_global_checkpoints(self) -> Dict[int, int]:
+        """Get current global checkpoints for all nodes"""
+        connection = None
+        cursor = None
+        try:
+            connection = self.get_db_connection()
+            cursor = connection.cursor(dictionary=True)
+            
+            cursor.execute("""
+                SELECT node_id, last_processed_log_id 
+                FROM recovery_checkpoints 
+                WHERE node_id IN (1, 2, 3)
+            """)
+            
+            results = cursor.fetchall()
+            checkpoints = {}
+            for row in results:
+                checkpoints[row['node_id']] = row['last_processed_log_id']
+            
+            # Ensure all nodes have checkpoints
+            for node in [1, 2, 3]:
+                if node not in checkpoints:
+                    checkpoints[node] = 0
+                    
+            return checkpoints
+            
+        except Error as e:
+            print(f"Error getting checkpoints: {e}")
+            return {1: 0, 2: 0, 3: 0}
+        finally:
+            if cursor:
+                cursor.close()
+            if connection:
+                connection.close()
+    
+    def update_checkpoint(self, node_id: int, last_processed_log_id: int):
+        """Update checkpoint for a specific node"""
+        connection = None
+        cursor = None
+        try:
+            connection = self.get_db_connection()
+            cursor = connection.cursor()
+            
+            cursor.execute("""
+                UPDATE recovery_checkpoints 
+                SET last_processed_log_id = %s
+                WHERE node_id = %s
+            """, (last_processed_log_id, node_id))
+            
+            connection.commit()
+            
+        except Error as e:
+            print(f"Error updating checkpoint for node {node_id}: {e}")
+        finally:
+            if cursor:
+                cursor.close()
+            if connection:
+                connection.close()
+    
+    def get_new_recovery_logs_since_checkpoint(self, node_id: int, checkpoint: int) -> List[Dict]:
+        """Get recovery logs from a specific node since the last checkpoint"""
+        connection = None
+        cursor = None
+        try:
+            # Connect to the specific node to get its recovery logs
+            from python.db.db_config import get_node_config, get_db_connection
+            
+            node_config = get_node_config(node_id)
+            connection = get_db_connection(node_id)
+            cursor = connection.cursor(dictionary=True)
+            
+            # Get logs with log_id greater than checkpoint and status = 'PENDING'
+            cursor.execute("""
+                SELECT log_id, target_node, source_node, sql_statement, transaction_hash, 
+                       timestamp, status, retry_count, error_message
+                FROM recovery_log 
+                WHERE log_id > %s AND status = 'PENDING'
+                ORDER BY log_id ASC
+            """, (checkpoint,))
+            
+            logs = cursor.fetchall()
+            
+            # Add source node info to each log
+            for log in logs:
+                log['found_in_node'] = node_id
+            
+            return logs
+            
+        except Error as e:
+            print(f"Error getting new recovery logs from node {node_id} since checkpoint {checkpoint}: {e}")
+            return []
+        finally:
+            if cursor:
+                cursor.close()
+            if connection:
+                connection.close()
+    
+    def process_recovery_logs_with_global_checkpoints(self) -> Dict:
+        """Process recovery logs using global checkpoints with concurrency control"""
+        recovery_results = {
+            'total_logs': 0,
+            'recovered': 0,
+            'failed': 0,
+            'lock_acquired': False,
+            'nodes_processed': [],
+            'checkpoint_updates': {}
+        }
+        
+        # Ensure checkpoint table exists
+        self.create_checkpoint_table_if_not_exists()
+        
+        # Try to acquire global lock
+        if not self.acquire_global_recovery_lock():
+            print("Another process is already running recovery. Skipping...")
+            return recovery_results
+        
+        recovery_results['lock_acquired'] = True
+        
+        try:
+            # Get current global checkpoints
+            checkpoints = self.get_global_checkpoints()
+            print(f"Current recovery checkpoints: {checkpoints}")
+            
+            # Process each node
+            for node_id in [1, 2, 3]:
+                try:
+                    current_checkpoint = checkpoints[node_id]
+                    new_logs = self.get_new_recovery_logs_since_checkpoint(node_id, current_checkpoint)
+                    
+                    if not new_logs:
+                        print(f"No new recovery logs for Node {node_id} since checkpoint {current_checkpoint}")
+                        continue
+                    
+                    print(f"Found {len(new_logs)} new recovery logs for Node {node_id}")
+                    recovery_results['nodes_processed'].append(node_id)
+                    recovery_results['total_logs'] += len(new_logs)
+                    
+                    # Process logs sequentially
+                    last_processed_log_id = current_checkpoint
+                    
+                    for log in new_logs:
+                        try:
+                            result = self._attempt_recovery_cross_node(log)
+                            
+                            if result == 'success':
+                                recovery_results['recovered'] += 1
+                                last_processed_log_id = log['log_id']
+                                print(f"Successfully recovered log {log['log_id']} from Node {node_id}")
+                            else:
+                                recovery_results['failed'] += 1
+                                print(f"Failed to recover log {log['log_id']} from Node {node_id}: {result}")
+                                # Continue processing other logs even if one fails
+                                
+                        except Exception as log_error:
+                            recovery_results['failed'] += 1
+                            print(f"Exception processing log {log['log_id']}: {log_error}")
+                    
+                    # Update checkpoint to the last successfully processed log
+                    if last_processed_log_id > current_checkpoint:
+                        self.update_checkpoint(node_id, last_processed_log_id)
+                        recovery_results['checkpoint_updates'][node_id] = last_processed_log_id
+                        print(f"Updated Node {node_id} checkpoint to {last_processed_log_id}")
+                
+                except Exception as node_error:
+                    print(f"Error processing Node {node_id}: {node_error}")
+                    continue
+            
+            print(f"Global recovery completed: {recovery_results}")
+            return recovery_results
+            
+        finally:
+            # Always release the lock
+            self.release_global_recovery_lock()
         """Get recovery logs status summary across all nodes"""
         global_status = {
             'nodes': {},
@@ -596,6 +896,31 @@ class RecoveryManager:
         
         return global_status
 
+
+# Global Recovery Function
+
+def execute_global_recovery() -> Dict:
+    """
+    Execute global recovery across all nodes using checkpoints
+    This is the main function to call before transactions
+    """
+    try:
+        # Use Node 1 config as the recovery manager base
+        from python.db.db_config import get_node_config
+        node1_config = get_node_config(1)
+        recovery_manager = RecoveryManager(node1_config, 1)
+        
+        return recovery_manager.process_recovery_logs_with_global_checkpoints()
+        
+    except Exception as e:
+        print(f"Global recovery execution failed: {e}")
+        return {
+            'total_logs': 0,
+            'recovered': 0,
+            'failed': 0,
+            'lock_acquired': False,
+            'error': str(e)
+        }
 
 # Utility Functions for Integration
 

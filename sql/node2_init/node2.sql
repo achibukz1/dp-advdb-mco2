@@ -78,6 +78,20 @@ CREATE TABLE recovery_log (
     INDEX idx_transaction_hash (transaction_hash)
 ) ENGINE=InnoDB;
 
+-- Global recovery checkpoint table
+DROP TABLE IF EXISTS recovery_checkpoints;
+CREATE TABLE recovery_checkpoints (
+    node_id INT PRIMARY KEY,
+    last_processed_log_id INT DEFAULT 0
+);
+
+-- Initialize checkpoints for all nodes (node_id 0 is reserved for locking)
+INSERT IGNORE INTO recovery_checkpoints (node_id, last_processed_log_id) VALUES 
+(0, -1),  -- Lock record (available when -1)
+(1, 0),   -- Node 1 checkpoint
+(2, 0),   -- Node 2 checkpoint  
+(3, 0);   -- Node 3 checkpoint
+
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 LOCK TABLES `trans` WRITE;
