@@ -216,7 +216,7 @@ else:
         "host": _get_config_value('CLOUD_DB_HOST', '34.81.44.143'),
         "port": int(_get_config_value('CLOUD_DB_PORT', '3306')),
         "user": _get_config_value('CLOUD_DB_USER', 'user'),
-        "password": _get_config_value('CLOUD_DB_PASSWORD', ''),
+        "password": _get_config_value('CLOUD_DB_PASSWORD', 'Rootpass123!'),
         "database": _get_config_value('CLOUD_DB_NAME', 'node1_db')
     }
 
@@ -225,7 +225,7 @@ else:
         "host": _get_config_value('CLOUD_DB_HOST_NODE2', '34.150.1.2'),
         "port": int(_get_config_value('CLOUD_DB_PORT_NODE2', '3306')),
         "user": _get_config_value('CLOUD_DB_USER_NODE2', 'user'),
-        "password": _get_config_value('CLOUD_DB_PASSWORD_NODE2', ''),
+        "password": _get_config_value('CLOUD_DB_PASSWORD_NODE2', 'Rootpass123!'),
         "database": _get_config_value('CLOUD_DB_NAME_NODE2', 'node2_db')
     }
 
@@ -234,7 +234,7 @@ else:
         "host": _get_config_value('CLOUD_DB_HOST_NODE3', '34.92.89.20'),
         "port": int(_get_config_value('CLOUD_DB_PORT_NODE3', '3306')),
         "user": _get_config_value('CLOUD_DB_USER_NODE3', 'user'),
-        "password": _get_config_value('CLOUD_DB_PASSWORD_NODE3', ''),
+        "password": _get_config_value('CLOUD_DB_PASSWORD_NODE3', 'Rootpass123!'),
         "database": _get_config_value('CLOUD_DB_NAME_NODE3', 'node3_db')
     }
 
