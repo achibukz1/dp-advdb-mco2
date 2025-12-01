@@ -46,7 +46,11 @@ def render(get_node_for_account, log_transaction):
                                   ["All", "Credit", "Debit"])
 
     with col3:
-        date_range = st.date_input("Date Range", value=None)
+        date_range = st.date_input(
+            "Date Range", 
+            value=None,
+            help="Select a single date or date range. Leave empty for all dates."
+        )
 
     # Check node status
     pinger = NodePinger()
@@ -70,6 +74,17 @@ def render(get_node_for_account, log_transaction):
         
     if trans_type != "All":
         base_query += f" AND type = '{trans_type}'"
+    
+    # Handle date range filter
+    if date_range:
+        if isinstance(date_range, (list, tuple)) and len(date_range) == 2:
+            # Date range with start and end dates
+            start_date, end_date = date_range
+            base_query += f" AND DATE(trans_time) BETWEEN '{start_date}' AND '{end_date}'"
+        elif len(date_range) == 1:
+            # Single date selected
+            selected_date = date_range[0]
+            base_query += f" AND DATE(trans_time) = '{selected_date}'"
 
     # Don't add LIMIT to individual queries - we'll limit the combined result
     query_without_limit = base_query
@@ -127,6 +142,20 @@ def render(get_node_for_account, log_transaction):
             return
             
         st.info(f"📡 Online nodes: {online_nodes}, Offline nodes: {offline_nodes}")
+        
+        # Show applied filters for debugging
+        if account_id or trans_type != "All" or date_range:
+            filters_applied = []
+            if account_id:
+                filters_applied.append(f"Account ID: {account_id}")
+            if trans_type != "All":
+                filters_applied.append(f"Type: {trans_type}")
+            if date_range:
+                if isinstance(date_range, (list, tuple)) and len(date_range) == 2:
+                    filters_applied.append(f"Date Range: {date_range[0]} to {date_range[1]}")
+                elif len(date_range) == 1:
+                    filters_applied.append(f"Date: {date_range[0]}")
+            st.info(f"🔍 Applied filters: {', '.join(filters_applied)}")
         
         try:
             combined_data = pd.DataFrame()
