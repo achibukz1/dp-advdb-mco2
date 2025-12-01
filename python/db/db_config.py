@@ -107,58 +107,83 @@ if isinstance(_use_cloud_sql_value, bool):
 else:
     USE_CLOUD_SQL = str(_use_cloud_sql_value).lower() == 'true'
 
+# Auto-detect: If running on Streamlit Cloud and cloud connections exist, use cloud
+if _is_running_in_streamlit():
+    try:
+        import streamlit as st
+        if hasattr(st, 'secrets') and 'connections' in st.secrets:
+            # Check if cloud connection exists
+            if 'mysql' in st.secrets.connections:
+                cloud_host = st.secrets.connections.mysql.get('host', '')
+                # If host is not localhost and not empty, we should use cloud
+                if cloud_host and cloud_host != 'localhost':
+                    USE_CLOUD_SQL = True
+                    print(f"[DB_CONFIG] Auto-detected Cloud SQL from connection config (host: {cloud_host})")
+    except Exception as e:
+        print(f"[DB_CONFIG] Could not auto-detect Cloud SQL: {e}")
+
 # Debug logging for deployment troubleshooting
 print(f"[DB_CONFIG] USE_CLOUD_SQL raw value: {_use_cloud_sql_value} (type: {type(_use_cloud_sql_value).__name__})")
 print(f"[DB_CONFIG] USE_CLOUD_SQL final value: {USE_CLOUD_SQL}")
 
+# Read and log config values for debugging
+_cloud_host = _get_config_value('CLOUD_DB_HOST', '')
+_cloud_user = _get_config_value('CLOUD_DB_USER', '')
+_local_host = _get_config_value('LOCAL_DB_HOST', 'localhost')
+_local_user = _get_config_value('LOCAL_DB_USER', 'user')
+print(f"[DB_CONFIG] CLOUD_DB_HOST: '{_cloud_host}'")
+print(f"[DB_CONFIG] CLOUD_DB_USER: '{_cloud_user}'")
+print(f"[DB_CONFIG] LOCAL_DB_HOST: '{_local_host}'")
+print(f"[DB_CONFIG] LOCAL_DB_USER: '{_local_user}'")
+
 # Node 1 Configuration
 CLOUD_SQL_CONFIG_NODE1 = {
-    "host": _get_config_value('CLOUD_DB_HOST'),
+    "host": _get_config_value('CLOUD_DB_HOST', '34.81.44.143'),
     "port": int(_get_config_value('CLOUD_DB_PORT', '3306')),
-    "user": _get_config_value('CLOUD_DB_USER'),
-    "password": _get_config_value('CLOUD_DB_PASSWORD'),
-    "database": _get_config_value('CLOUD_DB_NAME')
+    "user": _get_config_value('CLOUD_DB_USER', 'user'),
+    "password": _get_config_value('CLOUD_DB_PASSWORD', ''),
+    "database": _get_config_value('CLOUD_DB_NAME', 'node1_db')
 }
 
 LOCAL_CONFIG_NODE1 = {
-    "host": _get_config_value('LOCAL_DB_HOST'),
+    "host": _get_config_value('LOCAL_DB_HOST', 'localhost'),
     "port": int(_get_config_value('LOCAL_DB_PORT', '3306')),
-    "user": _get_config_value('LOCAL_DB_USER'),
-    "password": _get_config_value('LOCAL_DB_PASSWORD'),
-    "database": _get_config_value('LOCAL_DB_NAME')
+    "user": _get_config_value('LOCAL_DB_USER', 'user'),
+    "password": _get_config_value('LOCAL_DB_PASSWORD', 'rootpass'),
+    "database": _get_config_value('LOCAL_DB_NAME', 'node1_db')
 }
 
 # Node 2 Configuration
 CLOUD_SQL_CONFIG_NODE2 = {
-    "host": _get_config_value('CLOUD_DB_HOST_NODE2', _get_config_value('CLOUD_DB_HOST')),
+    "host": _get_config_value('CLOUD_DB_HOST_NODE2', _get_config_value('CLOUD_DB_HOST', '34.150.1.2')),
     "port": int(_get_config_value('CLOUD_DB_PORT_NODE2', '3306')),
-    "user": _get_config_value('CLOUD_DB_USER_NODE2', _get_config_value('CLOUD_DB_USER')),
-    "password": _get_config_value('CLOUD_DB_PASSWORD_NODE2', _get_config_value('CLOUD_DB_PASSWORD')),
+    "user": _get_config_value('CLOUD_DB_USER_NODE2', _get_config_value('CLOUD_DB_USER', 'user')),
+    "password": _get_config_value('CLOUD_DB_PASSWORD_NODE2', _get_config_value('CLOUD_DB_PASSWORD', '')),
     "database": _get_config_value('CLOUD_DB_NAME_NODE2', 'node2_db')
 }
 
 LOCAL_CONFIG_NODE2 = {
     "host": _get_config_value('LOCAL_DB_HOST_NODE2', 'localhost'),
     "port": int(_get_config_value('LOCAL_DB_PORT_NODE2', '3307')),
-    "user": _get_config_value('LOCAL_DB_USER_NODE2', _get_config_value('LOCAL_DB_USER')),
-    "password": _get_config_value('LOCAL_DB_PASSWORD_NODE2', _get_config_value('LOCAL_DB_PASSWORD')),
+    "user": _get_config_value('LOCAL_DB_USER_NODE2', _get_config_value('LOCAL_DB_USER', 'user')),
+    "password": _get_config_value('LOCAL_DB_PASSWORD_NODE2', _get_config_value('LOCAL_DB_PASSWORD', 'rootpass')),
     "database": _get_config_value('LOCAL_DB_NAME_NODE2', 'node2_db')
 }
 
 # Node 3 Configuration
 CLOUD_SQL_CONFIG_NODE3 = {
-    "host": _get_config_value('CLOUD_DB_HOST_NODE3', _get_config_value('CLOUD_DB_HOST')),
+    "host": _get_config_value('CLOUD_DB_HOST_NODE3', _get_config_value('CLOUD_DB_HOST', '34.92.89.20')),
     "port": int(_get_config_value('CLOUD_DB_PORT_NODE3', '3306')),
-    "user": _get_config_value('CLOUD_DB_USER_NODE3', _get_config_value('CLOUD_DB_USER')),
-    "password": _get_config_value('CLOUD_DB_PASSWORD_NODE3', _get_config_value('CLOUD_DB_PASSWORD')),
+    "user": _get_config_value('CLOUD_DB_USER_NODE3', _get_config_value('CLOUD_DB_USER', 'user')),
+    "password": _get_config_value('CLOUD_DB_PASSWORD_NODE3', _get_config_value('CLOUD_DB_PASSWORD', '')),
     "database": _get_config_value('CLOUD_DB_NAME_NODE3', 'node3_db')
 }
 
 LOCAL_CONFIG_NODE3 = {
     "host": _get_config_value('LOCAL_DB_HOST_NODE3', 'localhost'),
     "port": int(_get_config_value('LOCAL_DB_PORT_NODE3', '3308')),
-    "user": _get_config_value('LOCAL_DB_USER_NODE3', _get_config_value('LOCAL_DB_USER')),
-    "password": _get_config_value('LOCAL_DB_PASSWORD_NODE3', _get_config_value('LOCAL_DB_PASSWORD')),
+    "user": _get_config_value('LOCAL_DB_USER_NODE3', _get_config_value('LOCAL_DB_USER', 'user')),
+    "password": _get_config_value('LOCAL_DB_PASSWORD_NODE3', _get_config_value('LOCAL_DB_PASSWORD', 'rootpass')),
     "database": _get_config_value('LOCAL_DB_NAME_NODE3', 'node3_db')
 }
 
