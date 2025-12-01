@@ -51,7 +51,7 @@ if 'lock_manager' not in st.session_state:
     }
     st.session_state.lock_manager = DistributedLockManager(
         node_configs,
-        current_node_id="streamlit_app"
+        current_node_id="app"
     )
 
 # Initialize and start node pinger
