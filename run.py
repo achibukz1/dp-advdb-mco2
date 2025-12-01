@@ -182,7 +182,7 @@ def install_dependencies():
     
     if result.returncode != 0:
         print("Installing required packages...")
-        result = subprocess.run([pip_executable, "install", "-r", "python/requirements.txt"])
+        result = subprocess.run([pip_executable, "install", "-r", "python/gui/requirements.txt"])
         
         if result.returncode != 0:
             print("Failed to install dependencies.")
