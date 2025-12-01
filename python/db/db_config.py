@@ -150,11 +150,11 @@ def _get_node_config_from_connections():
         if 'mysql' in connections:
             conn = connections.mysql
             configs[1] = {
-                "host": conn.get('host', '34.81.44.143'),
-                "port": int(conn.get('port', 3306)),
-                "user": conn.get('username', 'user'),
-                "password": conn.get('password', ''),
-                "database": conn.get('database', 'node1_db')
+                "host": conn.get('host'),
+                "port": int(conn.get('port')),
+                "user": conn.get('username'),
+                "password": conn.get('password'),
+                "database": conn.get('database')
             }
             print(f"[DB_CONFIG] Node 1 config from st.secrets.connections.mysql: {configs[1]['host']}")
         
@@ -162,11 +162,11 @@ def _get_node_config_from_connections():
         if 'mysql_node2' in connections:
             conn = connections.mysql_node2
             configs[2] = {
-                "host": conn.get('host', '34.150.1.2'),
-                "port": int(conn.get('port', 3306)),
-                "user": conn.get('username', 'user'),
-                "password": conn.get('password', ''),
-                "database": conn.get('database', 'node2_db')
+                "host": conn.get('host'),
+                "port": int(conn.get('port')),
+                "user": conn.get('username'),
+                "password": conn.get('password'),
+                "database": conn.get('database')
             }
             print(f"[DB_CONFIG] Node 2 config from st.secrets.connections.mysql_node2: {configs[2]['host']}")
         
@@ -174,11 +174,11 @@ def _get_node_config_from_connections():
         if 'mysql_node3' in connections:
             conn = connections.mysql_node3
             configs[3] = {
-                "host": conn.get('host', '34.92.89.20'),
-                "port": int(conn.get('port', 3306)),
-                "user": conn.get('username', 'user'),
-                "password": conn.get('password', ''),
-                "database": conn.get('database', 'node3_db')
+                "host": conn.get('host'),
+                "port": int(conn.get('port')),
+                "user": conn.get('username'),
+                "password": conn.get('password'),
+                "database": conn.get('database')
             }
             print(f"[DB_CONFIG] Node 3 config from st.secrets.connections.mysql_node3: {configs[3]['host']}")
         
@@ -213,29 +213,29 @@ else:
 
     # Node 1 Configuration
     CLOUD_SQL_CONFIG_NODE1 = {
-        "host": _get_config_value('CLOUD_DB_HOST', '34.81.44.143'),
-        "port": int(_get_config_value('CLOUD_DB_PORT', '3306')),
-        "user": _get_config_value('CLOUD_DB_USER', 'user'),
-        "password": _get_config_value('CLOUD_DB_PASSWORD', ''),
-        "database": _get_config_value('CLOUD_DB_NAME', 'node1_db')
+        "host": _get_config_value('CLOUD_DB_HOST'),
+        "port": int(_get_config_value('CLOUD_DB_PORT')),
+        "user": _get_config_value('CLOUD_DB_USER'),
+        "password": _get_config_value('CLOUD_DB_PASSWORD'),
+        "database": _get_config_value('CLOUD_DB_NAME')
     }
 
     # Node 2 Configuration
     CLOUD_SQL_CONFIG_NODE2 = {
-        "host": _get_config_value('CLOUD_DB_HOST_NODE2', '34.150.1.2'),
-        "port": int(_get_config_value('CLOUD_DB_PORT_NODE2', '3306')),
-        "user": _get_config_value('CLOUD_DB_USER_NODE2', 'user'),
-        "password": _get_config_value('CLOUD_DB_PASSWORD_NODE2', ''),
-        "database": _get_config_value('CLOUD_DB_NAME_NODE2', 'node2_db')
+        "host": _get_config_value('CLOUD_DB_HOST_NODE2'),
+        "port": int(_get_config_value('CLOUD_DB_PORT_NODE2')),
+        "user": _get_config_value('CLOUD_DB_USER_NODE2'),
+        "password": _get_config_value('CLOUD_DB_PASSWORD_NODE2'),
+        "database": _get_config_value('CLOUD_DB_NAME_NODE2')
     }
 
     # Node 3 Configuration
     CLOUD_SQL_CONFIG_NODE3 = {
-        "host": _get_config_value('CLOUD_DB_HOST_NODE3', '34.92.89.20'),
-        "port": int(_get_config_value('CLOUD_DB_PORT_NODE3', '3306')),
-        "user": _get_config_value('CLOUD_DB_USER_NODE3', 'user'),
-        "password": _get_config_value('CLOUD_DB_PASSWORD_NODE3', ''),
-        "database": _get_config_value('CLOUD_DB_NAME_NODE3', 'node3_db')
+        "host": _get_config_value('CLOUD_DB_HOST_NODE3'),
+        "port": int(_get_config_value('CLOUD_DB_PORT_NODE3')),
+        "user": _get_config_value('CLOUD_DB_USER_NODE3'),
+        "password": _get_config_value('CLOUD_DB_PASSWORD_NODE3'),
+        "database": _get_config_value('CLOUD_DB_NAME_NODE3')
     }
 
     NODE_CONFIGS = {
