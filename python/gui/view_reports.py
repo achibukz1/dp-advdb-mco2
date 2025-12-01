@@ -110,5 +110,5 @@ def render():
         
         
     except Exception as e:
-        st.error(f"❌ Error loading reports: {str(e)}")
-        st.info("💡 Make sure the database is running and accessible.")
+        st.error(f"Error loading reports: {str(e)}")
+        st.info("Make sure the database is running and accessible.")

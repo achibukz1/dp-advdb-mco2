@@ -55,7 +55,7 @@ def render(get_node_for_account, log_transaction):
         k_symbol = st.text_input("K Symbol", value="")
 
     # Show next trans_id that will be used
-    st.info("ℹ️ The next available trans_id will be automatically fetched and assigned")
+    st.info("The next available trans_id will be automatically fetched and assigned")
 
     # Insert button with custom styling
     st.markdown("""
@@ -83,11 +83,11 @@ def render(get_node_for_account, log_transaction):
 
     btn_col1, btn_col2, btn_col3 = st.columns(3)
     with btn_col1:
-        insert_button = st.button("💾 Insert Transaction", type="primary", use_container_width=True)
+        insert_button = st.button("Insert Transaction", type="primary", use_container_width=True)
     with btn_col2:
-        commit_button = st.button("✅ Commit Transaction", type="secondary", use_container_width=True, key="commit_insert")
+        commit_button = st.button("Commit Transaction", type="secondary", use_container_width=True, key="commit_insert")
     with btn_col3:
-        rollback_button = st.button("↩️ Rollback", type="secondary", use_container_width=True, key="rollback_insert")
+        rollback_button = st.button("Rollback", type="secondary", use_container_width=True, key="rollback_insert")
 
     if commit_button:
         from python.utils.recovery_manager import replicate_transaction
@@ -142,7 +142,7 @@ def render(get_node_for_account, log_transaction):
                                     retry_count += 1
                                     
                                     if retry_count < max_retries:
-                                        st.warning(f"⚠️ Duplicate trans_id detected. Retrying with new ID... (Attempt {retry_count}/{max_retries})")
+                                        st.warning(f"Duplicate trans_id detected. Retrying with new ID... (Attempt {retry_count}/{max_retries})")
                                         
                                         try:
                                             # Rollback current transaction
@@ -157,7 +157,7 @@ def render(get_node_for_account, log_transaction):
                                             
                                             # Get new trans_id
                                             new_trans_id = max_result['max_trans_id'] + 1
-                                            st.info(f"🔄 Retrying with new trans_id: {new_trans_id} (was {trans_id})")
+                                            st.info(f"Retrying with new trans_id: {new_trans_id} (was {trans_id})")
                                             
                                             # Rebuild INSERT query with new trans_id
                                             new_query = query.replace(f"VALUES ({trans_id},", f"VALUES ({new_trans_id},")
@@ -181,14 +181,14 @@ def render(get_node_for_account, log_transaction):
                                             st.error(f"Retry failed: {str(retry_error)}")
                                             raise commit_error
                                     else:
-                                        st.error(f"❌ Max retries ({max_retries}) reached. Transaction failed.")
+                                        st.error(f"Max retries ({max_retries}) reached. Transaction failed.")
                                         raise commit_error
                                 else:
                                     # Not a duplicate key error - raise immediately
                                     raise commit_error
                         
                         if not commit_successful:
-                            st.error(f"❌ Transaction could not be committed after {max_retries} attempts")
+                            st.error(f"Transaction could not be committed after {max_retries} attempts")
                             # Release lock and skip to next transaction
                             if lock_acquired:
                                 st.session_state.lock_manager.release_multi_node_lock(resource_id, nodes=[1, 2, 3])
@@ -260,7 +260,7 @@ def render(get_node_for_account, log_transaction):
                             processed_trans_ids.add(trans_id)
                             
                         except Exception as replication_error:
-                            st.error(f"❌ Replication failed: {str(replication_error)}")
+                            st.error(f"Replication failed: {str(replication_error)}")
                             try:
                                 conn.rollback()
                                 cursor.close()
@@ -278,7 +278,7 @@ def render(get_node_for_account, log_transaction):
                             # 2PL SHRINKING PHASE: Release lock after commit and replication complete
                             if lock_acquired:
                                 st.session_state.lock_manager.release_multi_node_lock(resource_id, nodes=[1, 2, 3])
-                                st.info("🔓 Lock released (2PL shrinking phase)")
+                                st.info("Lock released (2PL shrinking phase)")
                     else:
                         # This is a replica transaction (same trans_id already processed)
                         # Just commit without acquiring lock (lock already held by primary)
@@ -341,7 +341,7 @@ def render(get_node_for_account, log_transaction):
                     del st.session_state.transaction_connections[idx]
                     del st.session_state.transaction_cursors[idx]
 
-                st.info(f"↩️ {rolled_back_count} insert transaction(s) rolled back - no changes made or logged")
+                st.info(f"{rolled_back_count} insert transaction(s) rolled back - no changes made or logged")
                 st.toast(f"{rolled_back_count} transaction(s) rolled back")
             except Exception as e:
                 st.error(f"Rollback failed: {str(e)}")
@@ -382,7 +382,7 @@ def render(get_node_for_account, log_transaction):
                     st.error("Failed to acquire lock. Another user may be inserting. Please try again.")
                     st.stop()
                 
-                st.info(f"✅ Lock acquired successfully by session {st.session_state.lock_manager.current_node_id}")
+                st.info(f"Lock acquired successfully by session {st.session_state.lock_manager.current_node_id}")
             
             # Step 3: Check node status using server pinger
             node_status = st.session_state.node_pinger.get_status()
@@ -406,10 +406,10 @@ def render(get_node_for_account, log_transaction):
                         break
                 
                 if primary_node is None:
-                    st.error("❌ All nodes are offline. Cannot proceed with transaction.")
+                    st.error("All nodes are offline. Cannot proceed with transaction.")
                     st.stop()
                 else:
-                    st.error(f"🚨 Both Node 1 and Node {partition_node} are offline - Using Node {primary_node} as emergency primary")
+                    st.error(f"Both Node 1 and Node {partition_node} are offline - Using Node {primary_node} as emergency primary")
             
             # Show node status
             with st.expander("Current Node Status"):
@@ -522,7 +522,7 @@ def render(get_node_for_account, log_transaction):
 
         except Exception as e:
             # Don't log failed transactions - only log successful commits
-            st.error(f"❌ Error: {str(e)}")
+            st.error(f"Error: {str(e)}")
             # On error, release lock immediately since transaction won't proceed
             if lock_acquired:
                 st.session_state.lock_manager.release_multi_node_lock(resource_id, nodes=[1, 2, 3])
