@@ -169,6 +169,13 @@ NODE_CONFIGS = {
     3: {"cloud": CLOUD_SQL_CONFIG_NODE3, "local": LOCAL_CONFIG_NODE3}
 }
 
+# Debug logging for configuration
+print(f"[DB_CONFIG] Active Node: {NODE_USE}")
+for node_num in [1, 2, 3]:
+    config_to_use = "cloud" if USE_CLOUD_SQL else "local"
+    active_config = NODE_CONFIGS[node_num][config_to_use]
+    print(f"[DB_CONFIG] Node {node_num} ({config_to_use}): {active_config['host']}:{active_config['port']}/{active_config['database']}")
+
 # Map node numbers to Streamlit connection names
 STREAMLIT_CONN_NAMES = {
     1: {"cloud": "mysql", "local": "mysql_local"},
@@ -252,6 +259,9 @@ def get_db_connection(node):
     config = get_node_config(node)
     config_type = "Cloud SQL" if USE_CLOUD_SQL else "Local"
 
+    # Debug logging
+    print(f"[DB_CONFIG] Connecting to {config_type} Node {node}: {config['host']}:{config['port']}/{config['database']}")
+
     try:
         conn = mysql.connector.connect(
             host=config["host"],
@@ -262,6 +272,7 @@ def get_db_connection(node):
             autocommit=False,
             connect_timeout=10  # Add timeout to prevent hanging
         )
+        print(f"[DB_CONFIG] Successfully connected to {config_type} Node {node}")
         return conn
     except mysql.connector.Error as db_err:
         error_code = db_err.errno if hasattr(db_err, 'errno') else 'Unknown'
@@ -315,22 +326,24 @@ def fetch_data(query, node, ttl=9999):
             config_type = "cloud" if USE_CLOUD_SQL else "local"
             conn_name = STREAMLIT_CONN_NAMES[node][config_type]
 
-            # Use st.connection for automatic caching and connection management
-            conn = st.connection(conn_name, type='sql')
-            # Execute query with built-in caching (ttl in seconds)
-            return conn.query(query, ttl=ttl)
+            # Check if the connection exists in secrets before trying to use it
+            if not hasattr(st, 'secrets') or 'connections' not in st.secrets or conn_name not in st.secrets.connections:
+                # Connection not configured in secrets.toml, fall back to manual connection
+                print(f"[DB_CONFIG] Warning: [connections.{conn_name}] not found in secrets.toml, using manual connection")
+                # Skip to manual connection below
+                pass
+            else:
+                # Use st.connection for automatic caching and connection management
+                conn = st.connection(conn_name, type='sql')
+                # Execute query with built-in caching (ttl in seconds)
+                return conn.query(query, ttl=ttl)
         except Exception as e:
+            # Log the error but fall back to manual connection instead of failing
             config = get_node_config(node)
             config_type_name = "Cloud SQL" if USE_CLOUD_SQL else "Local"
             conn_name_msg = f"[connections.{conn_name}]" if conn_name else "connection"
-            error_msg = (
-                f"Streamlit connection failed for {config_type_name} (Node {node}) "
-                f"({config['host']}:{config['port']}/{config['database']}): {str(e)}\n"
-                f"Error type: {type(e).__name__}\n\n"
-                f"Make sure your secrets.toml has {conn_name_msg} configured correctly.\n"
-                f"Current USE_CLOUD_SQL setting: {USE_CLOUD_SQL}"
-            )
-            raise Exception(error_msg)
+            print(f"[DB_CONFIG] Streamlit connection failed, falling back to manual connection: {str(e)}")
+            # Fall through to manual connection below
 
     # Not in Streamlit - use manual connection with custom caching
     cache_key = _generate_cache_key(query, node)
