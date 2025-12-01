@@ -6,6 +6,11 @@ Users perform CRUD operations; System logs concurrent transactions automatically
 import streamlit as st
 from datetime import datetime
 import json
+import sys
+import os
+
+# Add parent directory to path for imports (fixes Streamlit Cloud deployment)
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 from python.db.db_config import fetch_data, execute_query, get_node_config
 from python.utils.lock_manager import DistributedLockManager

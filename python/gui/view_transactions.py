@@ -6,6 +6,12 @@ import streamlit as st
 import pandas as pd
 import time
 from datetime import datetime
+import sys
+import os
+
+# Add parent directory to path for imports (fixes Streamlit Cloud deployment)
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+
 from python.utils.server_ping import NodePinger
 from python.db.db_config import fetch_data
 

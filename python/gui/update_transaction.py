@@ -6,6 +6,12 @@ This module contains the original logic for updating transactions.
 import streamlit as st
 import pandas as pd
 import time
+import sys
+import os
+
+# Add parent directory to path for imports (fixes Streamlit Cloud deployment)
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+
 from python.db.db_config import fetch_data, create_dedicated_connection
 
 
