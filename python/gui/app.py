@@ -93,9 +93,9 @@ page = st.sidebar.radio(
         "View Transactions",
         "Add Transaction",
         "Update Transaction",
-        "Delete Transaction",
-        "Transaction Log",
-        "Test Case #1"
+        "Delete Transaction"
+        # "Transaction Log",
+        # "Test Case #1"
     ]
 )
 
@@ -247,11 +247,11 @@ def main():
     elif page == "Delete Transaction":
         delete_transaction.render(get_node_for_account, log_transaction)
 
-    elif page == "Transaction Log":
-        transaction_log.render()
+    # elif page == "Transaction Log":
+    #     transaction_log.render()
 
-    elif page == "Test Case #1":
-        test_case1.render()
+    # elif page == "Test Case #1":
+    #     test_case1.render()
 
 if __name__ == "__main__":
     main()
