@@ -326,7 +326,7 @@ def render(get_node_for_account, log_transaction):
                         # 2PL SHRINKING PHASE: Release lock after commit and replication complete
                         if lock_acquired:
                             st.session_state.lock_manager.release_multi_node_lock(resource_id, nodes=[1, 2, 3])
-                            st.info("🔓 Lock released (2PL shrinking phase)")
+                            st.info("Lock released (2PL shrinking phase)")
 
                 # Remove processed transactions
                 for idx in sorted(indices_to_remove, reverse=True):

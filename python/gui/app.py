@@ -155,7 +155,7 @@ def main():
 
         # Show node status
         st.markdown("---")
-        st.subheader("📊 Current Node Status")
+        st.subheader("Current Node Status")
 
         col1, col2, col3 = st.columns(3)
 
@@ -172,7 +172,7 @@ def main():
                 st.metric("Node 3 (Odd Accounts)", "Active", f"{node3_count:,} rows")
                 
         except Exception as e:
-            st.error(f"⚠️ Database connection issue: {str(e)}")
+            st.error(f"Database connection issue: {str(e)}")
         
         # Recovery system is now manual-only (triggered before each transaction)
 
