@@ -43,10 +43,17 @@ class DistributedLockManager:
     def _initialize_lock_tables(self):
         """
         Ensure distributed_lock table exists on all nodes.
-        Creates the table if it doesn't exist.
+        Creates the table if it doesn't exist and user has privileges.
         """
+        check_table_sql = """
+        SELECT COUNT(*) as table_exists 
+        FROM information_schema.tables 
+        WHERE table_schema = DATABASE() 
+        AND table_name = 'distributed_lock'
+        """
+        
         create_table_sql = """
-        CREATE TABLE IF NOT EXISTS distributed_lock (
+        CREATE TABLE distributed_lock (
             lock_name VARCHAR(255) PRIMARY KEY,
             locked_by VARCHAR(255) NOT NULL,
             lock_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -59,18 +66,41 @@ class DistributedLockManager:
         failed_nodes = []
         
         for node_num, config in self.node_configs.items():
+            conn = None
+            cursor = None
             try:
                 conn = mysql.connector.connect(**config)
-                cursor = conn.cursor()
-                cursor.execute(create_table_sql)
-                conn.commit()
-                cursor.close()
-                conn.close()
-                initialized_nodes.append(node_num)
-                print(f"✓ Lock table initialized on Node {node_num}")
+                cursor = conn.cursor(dictionary=True)
+                
+                # First check if table exists
+                cursor.execute(check_table_sql)
+                result = cursor.fetchone()
+                table_exists = result['table_exists'] > 0
+                
+                if table_exists:
+                    initialized_nodes.append(node_num)
+                    print(f"✓ Lock table already exists on Node {node_num}")
+                else:
+                    # Table doesn't exist, try to create it
+                    cursor.execute(create_table_sql)
+                    conn.commit()
+                    initialized_nodes.append(node_num)
+                    print(f"✓ Lock table created on Node {node_num}")
+                    
+            except mysql.connector.Error as e:
+                failed_nodes.append(node_num)
+                if e.errno == 1142:  # CREATE command denied
+                    print(f"✗ Failed to create lock table on Node {node_num}: Insufficient CREATE privileges. Table may already exist or user needs CREATE permissions.")
+                else:
+                    print(f"✗ Failed to initialize lock table on Node {node_num}: {e}")
             except Exception as e:
                 failed_nodes.append(node_num)
                 print(f"✗ Failed to initialize lock table on Node {node_num}: {e}")
+            finally:
+                if cursor:
+                    cursor.close()
+                if conn:
+                    conn.close()
         
         # Don't raise exception - allow system to operate with available nodes
         if not initialized_nodes:
