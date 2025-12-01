@@ -126,15 +126,87 @@ if _is_running_in_streamlit():
 print(f"[DB_CONFIG] USE_CLOUD_SQL raw value: {_use_cloud_sql_value} (type: {type(_use_cloud_sql_value).__name__})")
 print(f"[DB_CONFIG] USE_CLOUD_SQL final value: {USE_CLOUD_SQL}")
 
-# Read and log config values for debugging
-_cloud_host = _get_config_value('CLOUD_DB_HOST', '')
-_cloud_user = _get_config_value('CLOUD_DB_USER', '')
-_local_host = _get_config_value('LOCAL_DB_HOST', 'localhost')
-_local_user = _get_config_value('LOCAL_DB_USER', 'user')
-print(f"[DB_CONFIG] CLOUD_DB_HOST: '{_cloud_host}'")
-print(f"[DB_CONFIG] CLOUD_DB_USER: '{_cloud_user}'")
-print(f"[DB_CONFIG] LOCAL_DB_HOST: '{_local_host}'")
-print(f"[DB_CONFIG] LOCAL_DB_USER: '{_local_user}'")
+# Function to get config from connections or legacy secrets
+def _get_node_config_from_connections():
+    """
+    Get database configuration from st.secrets.connections if available.
+    This is the preferred method for Streamlit Cloud deployment.
+    
+    Returns:
+        dict: Dictionary mapping node numbers to their cloud configs, or None if not available
+    """
+    if not _is_running_in_streamlit():
+        return None
+    
+    try:
+        import streamlit as st
+        if not hasattr(st, 'secrets') or 'connections' not in st.secrets:
+            return None
+        
+        connections = st.secrets.connections
+        configs = {}
+        
+        # Node 1 - use 'mysql' connection
+        if 'mysql' in connections:
+            conn = connections.mysql
+            configs[1] = {
+                "host": conn.get('host', '34.81.44.143'),
+                "port": int(conn.get('port', 3306)),
+                "user": conn.get('username', 'user'),
+                "password": conn.get('password', ''),
+                "database": conn.get('database', 'node1_db')
+            }
+            print(f"[DB_CONFIG] Node 1 config from st.secrets.connections.mysql: {configs[1]['host']}")
+        
+        # Node 2 - use 'mysql_node2' connection
+        if 'mysql_node2' in connections:
+            conn = connections.mysql_node2
+            configs[2] = {
+                "host": conn.get('host', '34.150.1.2'),
+                "port": int(conn.get('port', 3306)),
+                "user": conn.get('username', 'user'),
+                "password": conn.get('password', ''),
+                "database": conn.get('database', 'node2_db')
+            }
+            print(f"[DB_CONFIG] Node 2 config from st.secrets.connections.mysql_node2: {configs[2]['host']}")
+        
+        # Node 3 - use 'mysql_node3' connection
+        if 'mysql_node3' in connections:
+            conn = connections.mysql_node3
+            configs[3] = {
+                "host": conn.get('host', '34.92.89.20'),
+                "port": int(conn.get('port', 3306)),
+                "user": conn.get('username', 'user'),
+                "password": conn.get('password', ''),
+                "database": conn.get('database', 'node3_db')
+            }
+            print(f"[DB_CONFIG] Node 3 config from st.secrets.connections.mysql_node3: {configs[3]['host']}")
+        
+        return configs if configs else None
+    except Exception as e:
+        print(f"[DB_CONFIG] Error reading from st.secrets.connections: {e}")
+        return None
+
+# Try to get configs from st.secrets.connections first (preferred for Streamlit Cloud)
+_node_configs_from_connections = _get_node_config_from_connections()
+
+if _node_configs_from_connections:
+    # Use configs from st.secrets.connections
+    print("[DB_CONFIG] Using configuration from st.secrets.connections")
+    NODE_CONFIGS = {node: {"cloud": config} for node, config in _node_configs_from_connections.items()}
+else:
+    # Fall back to legacy configuration method
+    print("[DB_CONFIG] Using legacy configuration from flat secrets/env vars")
+    
+    # Read and log config values for debugging
+    _cloud_host = _get_config_value('CLOUD_DB_HOST', '')
+    _cloud_user = _get_config_value('CLOUD_DB_USER', '')
+    _local_host = _get_config_value('LOCAL_DB_HOST', 'localhost')
+    _local_user = _get_config_value('LOCAL_DB_USER', 'user')
+    print(f"[DB_CONFIG] CLOUD_DB_HOST: '{_cloud_host}'")
+    print(f"[DB_CONFIG] CLOUD_DB_USER: '{_cloud_user}'")
+    print(f"[DB_CONFIG] LOCAL_DB_HOST: '{_local_host}'")
+    print(f"[DB_CONFIG] LOCAL_DB_USER: '{_local_user}'")
 
 # Node 1 Configuration
 CLOUD_SQL_CONFIG_NODE1 = {
