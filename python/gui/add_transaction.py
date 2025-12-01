@@ -289,9 +289,12 @@ def render(get_node_for_account, log_transaction):
                 
                 if recovery_result.get('lock_acquired', False):
                     if recovery_result['total_logs'] > 0:
-                        st.success(f"Processed {recovery_result['recovered']} recovery logs, {recovery_result['failed']} failed")
+                        if recovery_result['recovered'] > 0:
+                            st.success(f"Processed {recovery_result['recovered']} recovery logs successfully")
                         if recovery_result['failed'] > 0:
                             st.warning(f"{recovery_result['failed']} recovery logs failed - check system logs")
+                        elif recovery_result['recovered'] == 0:
+                            st.info("No recovery logs needed processing")
                     else:
                         st.info("No new recovery logs to process")
                 else:

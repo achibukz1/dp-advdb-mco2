@@ -813,31 +813,46 @@ class RecoveryManager:
                     recovery_results['nodes_processed'].append(node_id)
                     recovery_results['total_logs'] += len(new_logs)
                     
-                    # Process logs sequentially
-                    last_processed_log_id = current_checkpoint
+                    # Process logs sequentially and track consecutive successes
+                    last_consecutive_success = current_checkpoint
                     
                     for log in new_logs:
                         try:
                             result = self._attempt_recovery_cross_node(log)
                             
-                            if result == 'success':
+                            # Check for successful recovery (success, recovered, or skipped are all considered successful)
+                            if result in ['success', 'recovered', 'skipped']:
                                 recovery_results['recovered'] += 1
-                                last_processed_log_id = log['log_id']
-                                print(f"Successfully recovered log {log['log_id']} from Node {node_id}")
+                                print(f"Successfully processed log {log['log_id']} from Node {node_id} (status: {result})")
+                                
+                                # Only update consecutive checkpoint if this log immediately follows the last processed
+                                if log['log_id'] == last_consecutive_success + 1:
+                                    last_consecutive_success = log['log_id']
+                                # If there's a gap, don't update consecutive checkpoint but continue processing
+                                    
                             else:
                                 recovery_results['failed'] += 1
                                 print(f"Failed to recover log {log['log_id']} from Node {node_id}: {result}")
-                                # Continue processing other logs even if one fails
+                                # Failed log breaks the consecutive chain - continue processing but don't update checkpoint
                                 
                         except Exception as log_error:
                             recovery_results['failed'] += 1
                             print(f"Exception processing log {log['log_id']}: {log_error}")
+                            # Exception breaks the consecutive chain
                     
-                    # Update checkpoint to the last successfully processed log
-                    if last_processed_log_id > current_checkpoint:
-                        self.update_checkpoint(node_id, last_processed_log_id)
-                        recovery_results['checkpoint_updates'][node_id] = last_processed_log_id
-                        print(f"Updated Node {node_id} checkpoint to {last_processed_log_id}")
+                    # Update checkpoint only to the highest consecutive successful log_id
+                    if last_consecutive_success > current_checkpoint:
+                        self.update_checkpoint(node_id, last_consecutive_success)
+                        recovery_results['checkpoint_updates'][node_id] = last_consecutive_success
+                        print(f"Updated Node {node_id} checkpoint to {last_consecutive_success} (consecutive successes)")
+                        
+                        # Show information about any gaps
+                        if recovery_results['failed'] > 0:
+                            remaining_logs = [log['log_id'] for log in new_logs if log['log_id'] > last_consecutive_success]
+                            if remaining_logs:
+                                print(f"Note: Logs {remaining_logs} will be retried in next recovery cycle due to earlier failures")
+                    else:
+                        print(f"Node {node_id} checkpoint unchanged at {current_checkpoint} - no consecutive successes")
                 
                 except Exception as node_error:
                     print(f"Error processing Node {node_id}: {node_error}")
