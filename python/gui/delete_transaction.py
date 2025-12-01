@@ -43,12 +43,8 @@ def render(get_node_for_account, log_transaction):
         trans_id = st.number_input("Transaction ID", min_value=1, value=1, key='delete_trans_id')
 
     with col2:
-        isolation_level = st.selectbox(
-            "Isolation Level",
-            ["READ UNCOMMITTED", "READ COMMITTED", "REPEATABLE READ", "SERIALIZABLE"],
-            index=1,
-            key='delete_isolation'
-        )
+        # Hardcode isolation level to REPEATABLE READ  
+        isolation_level = "REPEATABLE READ"
 
     # Show transaction info button
     if st.button("Preview Transaction"):

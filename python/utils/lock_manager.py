@@ -59,7 +59,7 @@ class DistributedLockManager:
         except Exception as e:
             raise Exception(f"Failed to connect to Node {node}: {e}")
     
-    def acquire_lock(self, resource_id: str, node: int, timeout: int = 30) -> bool:
+    def acquire_lock(self, resource_id: str, node: int, timeout: int = 120) -> bool:
         """
         Acquire a lock on a specific resource at a specific node.
         
