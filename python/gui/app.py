@@ -10,20 +10,42 @@ import sys
 import os
 
 # Add parent directory to path for imports (fixes Streamlit Cloud deployment)
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+# Get the absolute path to the project root (two levels up from this file)
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.abspath(os.path.join(current_dir, '..', '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
-from python.db.db_config import fetch_data, execute_query, get_node_config, NODE_USE
-from python.utils.lock_manager import DistributedLockManager
-from python.utils.server_ping import NodePinger
+# Also add the python directory to path
+python_dir = os.path.join(project_root, 'python')
+if python_dir not in sys.path:
+    sys.path.insert(0, python_dir)
 
-# Import page modules
-import python.gui.view_transactions as view_transactions
-import python.gui.view_reports as view_reports
-import python.gui.add_transaction as add_transaction
-import python.gui.update_transaction as update_transaction
-import python.gui.delete_transaction as delete_transaction
-import python.gui.transaction_log as transaction_log
-import python.gui.test_case1 as test_case1
+# Try multiple import strategies to work in different environments
+try:
+    # Strategy 1: Absolute import from project root
+    from python.db.db_config import fetch_data, execute_query, get_node_config, NODE_USE
+    from python.utils.lock_manager import DistributedLockManager
+    from python.utils.server_ping import NodePinger
+    import python.gui.view_transactions as view_transactions
+    import python.gui.view_reports as view_reports
+    import python.gui.add_transaction as add_transaction
+    import python.gui.update_transaction as update_transaction
+    import python.gui.delete_transaction as delete_transaction
+    import python.gui.transaction_log as transaction_log
+    import python.gui.test_case1 as test_case1
+except ImportError:
+    # Strategy 2: Relative import from python directory
+    from db.db_config import fetch_data, execute_query, get_node_config, NODE_USE
+    from utils.lock_manager import DistributedLockManager
+    from utils.server_ping import NodePinger
+    import gui.view_transactions as view_transactions
+    import gui.view_reports as view_reports
+    import gui.add_transaction as add_transaction
+    import gui.update_transaction as update_transaction
+    import gui.delete_transaction as delete_transaction
+    import gui.transaction_log as transaction_log
+    import gui.test_case1 as test_case1
 
 st.set_page_config(
     page_title="Transaction Manager",

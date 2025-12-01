@@ -72,10 +72,10 @@ class DistributedLockManager:
                 failed_nodes.append(node_num)
                 print(f"✗ Failed to initialize lock table on Node {node_num}: {e}")
         
+        # Don't raise exception - allow system to operate with available nodes
         if not initialized_nodes:
-            raise Exception("CRITICAL: Failed to initialize lock tables on ANY node. System cannot operate.")
-        
-        if failed_nodes:
+            print("WARNING: Failed to initialize lock tables on ANY node. System will operate in degraded mode.")
+        elif failed_nodes:
             print(f"WARNING: Lock tables only available on nodes {initialized_nodes}. Nodes {failed_nodes} unavailable.")
         else:
             print(f"✓ Lock tables successfully initialized on all nodes: {initialized_nodes}")
