@@ -53,7 +53,11 @@ def _get_config_value(key, default=''):
         # Try to import streamlit and use secrets
         import streamlit as st
         if hasattr(st, 'secrets') and key in st.secrets:
-            return st.secrets[key]
+            value = st.secrets[key]
+            # Handle boolean values from TOML (they come as Python bool, not string)
+            if isinstance(value, bool):
+                return value
+            return value
     except (ImportError, FileNotFoundError, KeyError):
         pass
 
@@ -62,7 +66,11 @@ def _get_config_value(key, default=''):
 
 
 # Query Cache Configuration
-CACHE_ENABLED = str(_get_config_value('CACHE_ENABLED', 'True')).lower() == 'true'
+_cache_enabled_value = _get_config_value('CACHE_ENABLED', 'True')
+if isinstance(_cache_enabled_value, bool):
+    CACHE_ENABLED = _cache_enabled_value
+else:
+    CACHE_ENABLED = str(_cache_enabled_value).lower() == 'true'
 CACHE_TTL_SECONDS = int(_get_config_value('CACHE_TTL_SECONDS', '3600'))
 _query_cache = {}  # In-memory cache storage per node
 
@@ -92,7 +100,16 @@ NODE_USE = get_active_node()
 
 # Database Configuration
 # Choose connection method by setting USE_CLOUD_SQL environment variable
-USE_CLOUD_SQL = str(_get_config_value('USE_CLOUD_SQL', 'False')).lower() == 'true'
+_use_cloud_sql_value = _get_config_value('USE_CLOUD_SQL', 'False')
+# Handle both boolean (from TOML) and string (from env vars) values
+if isinstance(_use_cloud_sql_value, bool):
+    USE_CLOUD_SQL = _use_cloud_sql_value
+else:
+    USE_CLOUD_SQL = str(_use_cloud_sql_value).lower() == 'true'
+
+# Debug logging for deployment troubleshooting
+print(f"[DB_CONFIG] USE_CLOUD_SQL raw value: {_use_cloud_sql_value} (type: {type(_use_cloud_sql_value).__name__})")
+print(f"[DB_CONFIG] USE_CLOUD_SQL final value: {USE_CLOUD_SQL}")
 
 # Node 1 Configuration
 CLOUD_SQL_CONFIG_NODE1 = {
