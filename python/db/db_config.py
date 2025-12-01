@@ -145,13 +145,13 @@ CLOUD_SQL_CONFIG_NODE1 = {
     "database": _get_config_value('CLOUD_DB_NAME', 'node1_db')
 }
 
-LOCAL_CONFIG_NODE1 = {
-    "host": _get_config_value('LOCAL_DB_HOST', 'localhost'),
-    "port": int(_get_config_value('LOCAL_DB_PORT', '3306')),
-    "user": _get_config_value('LOCAL_DB_USER', 'user'),
-    "password": _get_config_value('LOCAL_DB_PASSWORD', 'rootpass'),
-    "database": _get_config_value('LOCAL_DB_NAME', 'node1_db')
-}
+# LOCAL_CONFIG_NODE1 = {
+#     "host": _get_config_value('LOCAL_DB_HOST', 'localhost'),
+#     "port": int(_get_config_value('LOCAL_DB_PORT', '3306')),
+#     "user": _get_config_value('LOCAL_DB_USER', 'user'),
+#     "password": _get_config_value('LOCAL_DB_PASSWORD', 'rootpass'),
+#     "database": _get_config_value('LOCAL_DB_NAME', 'node1_db')
+# }
 
 # Node 2 Configuration
 CLOUD_SQL_CONFIG_NODE2 = {
@@ -162,13 +162,13 @@ CLOUD_SQL_CONFIG_NODE2 = {
     "database": _get_config_value('CLOUD_DB_NAME_NODE2', 'node2_db')
 }
 
-LOCAL_CONFIG_NODE2 = {
-    "host": _get_config_value('LOCAL_DB_HOST_NODE2', 'localhost'),
-    "port": int(_get_config_value('LOCAL_DB_PORT_NODE2', '3307')),
-    "user": _get_config_value('LOCAL_DB_USER_NODE2', _get_config_value('LOCAL_DB_USER', 'user')),
-    "password": _get_config_value('LOCAL_DB_PASSWORD_NODE2', _get_config_value('LOCAL_DB_PASSWORD', 'rootpass')),
-    "database": _get_config_value('LOCAL_DB_NAME_NODE2', 'node2_db')
-}
+# LOCAL_CONFIG_NODE2 = {
+#     "host": _get_config_value('LOCAL_DB_HOST_NODE2', 'localhost'),
+#     "port": int(_get_config_value('LOCAL_DB_PORT_NODE2', '3307')),
+#     "user": _get_config_value('LOCAL_DB_USER_NODE2', _get_config_value('LOCAL_DB_USER', 'user')),
+#     "password": _get_config_value('LOCAL_DB_PASSWORD_NODE2', _get_config_value('LOCAL_DB_PASSWORD', 'rootpass')),
+#     "database": _get_config_value('LOCAL_DB_NAME_NODE2', 'node2_db')
+# }
 
 # Node 3 Configuration
 CLOUD_SQL_CONFIG_NODE3 = {
@@ -179,19 +179,25 @@ CLOUD_SQL_CONFIG_NODE3 = {
     "database": _get_config_value('CLOUD_DB_NAME_NODE3', 'node3_db')
 }
 
-LOCAL_CONFIG_NODE3 = {
-    "host": _get_config_value('LOCAL_DB_HOST_NODE3', 'localhost'),
-    "port": int(_get_config_value('LOCAL_DB_PORT_NODE3', '3308')),
-    "user": _get_config_value('LOCAL_DB_USER_NODE3', _get_config_value('LOCAL_DB_USER', 'user')),
-    "password": _get_config_value('LOCAL_DB_PASSWORD_NODE3', _get_config_value('LOCAL_DB_PASSWORD', 'rootpass')),
-    "database": _get_config_value('LOCAL_DB_NAME_NODE3', 'node3_db')
-}
+# LOCAL_CONFIG_NODE3 = {
+#     "host": _get_config_value('LOCAL_DB_HOST_NODE3', 'localhost'),
+#     "port": int(_get_config_value('LOCAL_DB_PORT_NODE3', '3308')),
+#     "user": _get_config_value('LOCAL_DB_USER_NODE3', _get_config_value('LOCAL_DB_USER', 'user')),
+#     "password": _get_config_value('LOCAL_DB_PASSWORD_NODE3', _get_config_value('LOCAL_DB_PASSWORD', 'rootpass')),
+#     "database": _get_config_value('LOCAL_DB_NAME_NODE3', 'node3_db')
+# }
 
-# Map node numbers to configurations
+# # Map node numbers to configurations
+# NODE_CONFIGS = {
+#     1: {"cloud": CLOUD_SQL_CONFIG_NODE1, "local": LOCAL_CONFIG_NODE1},
+#     2: {"cloud": CLOUD_SQL_CONFIG_NODE2, "local": LOCAL_CONFIG_NODE2},
+#     3: {"cloud": CLOUD_SQL_CONFIG_NODE3, "local": LOCAL_CONFIG_NODE3}
+# }
+
 NODE_CONFIGS = {
-    1: {"cloud": CLOUD_SQL_CONFIG_NODE1, "local": LOCAL_CONFIG_NODE1},
-    2: {"cloud": CLOUD_SQL_CONFIG_NODE2, "local": LOCAL_CONFIG_NODE2},
-    3: {"cloud": CLOUD_SQL_CONFIG_NODE3, "local": LOCAL_CONFIG_NODE3}
+    1: {"cloud": CLOUD_SQL_CONFIG_NODE1},
+    2: {"cloud": CLOUD_SQL_CONFIG_NODE2},
+    3: {"cloud": CLOUD_SQL_CONFIG_NODE3}
 }
 
 # Debug logging for configuration
