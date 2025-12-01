@@ -193,8 +193,8 @@ _node_configs_from_connections = _get_node_config_from_connections()
 if _node_configs_from_connections:
     # Use configs from st.secrets.connections
     print("[DB_CONFIG] Using configuration from st.secrets.connections")
-    # Force USE_CLOUD_SQL to True when using connections
-    USE_CLOUD_SQL = True
+    # # Force USE_CLOUD_SQL to True when using connections
+    # USE_CLOUD_SQL = True
     print("[DB_CONFIG] Forcing USE_CLOUD_SQL = True (using st.secrets.connections)")
     NODE_CONFIGS = {node: {"cloud": config} for node, config in _node_configs_from_connections.items()}
 else:
