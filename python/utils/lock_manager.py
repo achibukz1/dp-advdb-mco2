@@ -319,90 +319,178 @@ class DistributedLockManager:
     
     def acquire_multi_node_lock(self, resource_id: str, nodes: list, timeout: int = 30) -> bool:
         """
-        Acquire locks on the same resource across multiple nodes atomically.
+        Acquire locks on the same resource across multiple available nodes.
         
-        This implements the GROWING PHASE of 2-Phase Locking (2PL).
-        All locks must be acquired before any operations on the data.
-        
-        This is crucial for distributed transactions that need to update the same
-        record on multiple nodes simultaneously. If any lock acquisition fails,
-        all previously acquired locks are released.
+        This implements the GROWING PHASE of 2-Phase Locking (2PL) with FAULT TOLERANCE.
+        Locks are acquired on any available nodes, even if some nodes are down.
+        This ensures high availability - operations succeed as long as at least 1 node is up.
         
         Args:
             resource_id: Unique identifier for the resource
-            nodes: List of node numbers where locks should be acquired
-            timeout: Maximum seconds to wait for all lock acquisitions
+            nodes: List of node numbers where locks should be attempted
+            timeout: Maximum seconds to wait for lock acquisitions
             
         Returns:
-            bool: True if all locks acquired successfully, False otherwise
+            bool: True if locks acquired on at least 1 node, False if all nodes failed
         """
         start_time = time.time()
         acquired_nodes = []
+        failed_nodes = []
         
         print(f"[{self.current_node_id}] 📈 2PL GROWING PHASE: Acquiring locks on {resource_id} across nodes {nodes}")
         
-        try:
-            for node in nodes:
-                remaining_timeout = timeout - (time.time() - start_time)
-                
-                if remaining_timeout <= 0:
-                    print(f"[{self.current_node_id}] Multi-node lock timeout for {resource_id}")
-                    raise Exception("Timeout during multi-node lock acquisition")
-                
-                if not self.acquire_lock(resource_id, node, int(remaining_timeout)):
-                    raise Exception(f"Failed to acquire lock on Node {node}")
-                
-                acquired_nodes.append(node)
-                print(f"[{self.current_node_id}]   ✓ Lock acquired on Node {node}")
+        # FAULT TOLERANT: Try each node, continue even if some fail
+        for node in nodes:
+            remaining_timeout = timeout - (time.time() - start_time)
             
-            # Track this resource as locked
-            if resource_id not in self._active_locks:
-                self._active_locks[resource_id] = []
-            self._active_locks[resource_id].extend(acquired_nodes)
+            if remaining_timeout <= 0:
+                print(f"[{self.current_node_id}] ⏱️ Lock acquisition timeout reached")
+                break
             
-            print(f"[{self.current_node_id}] ✅ 2PL GROWING PHASE COMPLETE: All locks acquired on {resource_id}")
-            return True
+            try:
+                if self.acquire_lock(resource_id, node, int(remaining_timeout)):
+                    acquired_nodes.append(node)
+                    print(f"[{self.current_node_id}]   ✓ Lock acquired on Node {node}")
+                else:
+                    failed_nodes.append(node)
+                    print(f"[{self.current_node_id}]   ⚠️ Could not acquire lock on Node {node} (may be held)")
+            except Exception as e:
+                failed_nodes.append(node)
+                print(f"[{self.current_node_id}]   ⚠️ Node {node} unavailable: {str(e)[:100]}")
         
-        except Exception as e:
-            # Release all acquired locks
-            print(f"[{self.current_node_id}] ❌ 2PL GROWING PHASE FAILED for {resource_id}: {e}")
-            for node in acquired_nodes:
-                self.release_lock(resource_id, node)
+        # HIGH AVAILABILITY: Succeed if ANY nodes acquired locks
+        if acquired_nodes:
+            # Track which specific nodes have locks
+            self._active_locks[resource_id] = acquired_nodes
+            
+            if failed_nodes:
+                print(f"[{self.current_node_id}] ✅ 2PL GROWING PHASE COMPLETE: Locks acquired on {len(acquired_nodes)}/{len(nodes)} nodes {acquired_nodes}")
+                print(f"[{self.current_node_id}]    ℹ️ Nodes unavailable: {failed_nodes} (high availability mode)")
+            else:
+                print(f"[{self.current_node_id}] ✅ 2PL GROWING PHASE COMPLETE: All locks acquired on {resource_id}")
+            
+            # ACTIVE SYNC: Sync existing locks to recovered nodes
+            self._sync_locks_to_recovered_nodes(resource_id, acquired_nodes, failed_nodes)
+            
+            return True
+        else:
+            print(f"[{self.current_node_id}] ❌ 2PL GROWING PHASE FAILED: No nodes available for {resource_id}")
             return False
     
     def release_multi_node_lock(self, resource_id: str, nodes: list) -> bool:
         """
-        Release locks on a resource across multiple nodes.
+        Release locks on a resource across all nodes (including recovered ones).
         
-        This implements the SHRINKING PHASE of 2-Phase Locking (2PL).
-        Once any lock is released, no new locks can be acquired for this transaction.
+        This implements the SHRINKING PHASE of 2-Phase Locking (2PL) with FAULT TOLERANCE.
+        Attempts to release on ALL specified nodes, not just where locks were acquired.
+        This provides self-healing: if a node was down during acquisition and comes back
+        during the transaction, we'll clean it up during release.
         
         Args:
             resource_id: Unique identifier for the resource
-            nodes: List of node numbers where locks should be released
+            nodes: List of all node numbers where locks should be released
             
         Returns:
-            bool: True if all locks released successfully
+            bool: True if at least one lock released successfully
         """
-        print(f"[{self.current_node_id}] 📉 2PL SHRINKING PHASE: Releasing locks on {resource_id} across nodes {nodes}")
+        # Get list of nodes where we actually acquired locks
+        acquired_nodes = self._active_locks.get(resource_id, [])
         
-        success = True
+        print(f"[{self.current_node_id}] 📉 2PL SHRINKING PHASE: Releasing locks on {resource_id}")
+        print(f"[{self.current_node_id}]    Locks were on: {acquired_nodes}, attempting release on all: {nodes}")
+        
+        released_count = 0
+        failed_nodes = []
+        
+        # FAULT TOLERANT: Try to release on ALL nodes (self-healing)
         for node in nodes:
-            if not self.release_lock(resource_id, node):
-                success = False
-            else:
-                print(f"[{self.current_node_id}]   ✓ Lock released on Node {node}")
+            try:
+                if self.release_lock(resource_id, node):
+                    released_count += 1
+                    print(f"[{self.current_node_id}]   ✓ Lock released on Node {node}")
+                else:
+                    # Lock might not exist on this node (was down during acquisition)
+                    pass
+            except Exception as e:
+                failed_nodes.append(node)
+                print(f"[{self.current_node_id}]   ⚠️ Could not reach Node {node}: {str(e)[:50]}")
         
         # Remove from active locks tracking
         if resource_id in self._active_locks:
             del self._active_locks[resource_id]
         
-        if success:
-            print(f"[{self.current_node_id}] ✅ 2PL SHRINKING PHASE COMPLETE: All locks released on {resource_id}")
+        if released_count > 0:
+            print(f"[{self.current_node_id}] ✅ 2PL SHRINKING PHASE COMPLETE: Released locks on {released_count}/{len(nodes)} nodes")
+            return True
         else:
-            print(f"[{self.current_node_id}] ⚠️ 2PL SHRINKING PHASE: Some locks failed to release on {resource_id}")
+            print(f"[{self.current_node_id}] ⚠️ 2PL SHRINKING PHASE: No locks could be released")
+            return False
+    
+    def _sync_locks_to_recovered_nodes(self, resource_id: str, healthy_nodes: list, failed_nodes: list):
+        """
+        Actively sync existing locks to nodes that have recovered.
         
-        return success
+        On-demand active sync: When a transaction starts, if some nodes were unavailable
+        during initial lock acquisition but have locks on other nodes, we detect recovered
+        nodes and sync the lock records to them.
+        
+        Args:
+            resource_id: The resource being locked
+            healthy_nodes: Nodes where locks were successfully acquired
+            failed_nodes: Nodes that failed during lock acquisition
+        """
+        if not failed_nodes or not healthy_nodes:
+            return  # Nothing to sync
+        
+        # Get a lock record from one of the healthy nodes
+        source_node = healthy_nodes[0]
+        lock_name = f"lock_{resource_id}"
+        
+        try:
+            # Read lock from source node
+            source_conn = self._get_connection(source_node)
+            source_cursor = source_conn.cursor(dictionary=True)
+            source_cursor.execute(
+                "SELECT locked_by, lock_time FROM distributed_lock WHERE lock_name = %s",
+                (lock_name,)
+            )
+            lock_record = source_cursor.fetchone()
+            source_cursor.close()
+            source_conn.close()
+            
+            if not lock_record:
+                return  # No lock to sync
+            
+            # Try to sync to each failed node (they might have recovered)
+            for target_node in failed_nodes:
+                try:
+                    target_conn = self._get_connection(target_node)
+                    target_cursor = target_conn.cursor()
+                    
+                    # Insert or replace lock on recovered node
+                    target_cursor.execute("""
+                        INSERT INTO distributed_lock (lock_name, locked_by, lock_time)
+                        VALUES (%s, %s, %s)
+                        ON DUPLICATE KEY UPDATE locked_by = VALUES(locked_by), lock_time = VALUES(lock_time)
+                    """, (lock_name, lock_record['locked_by'], lock_record['lock_time']))
+                    
+                    target_conn.commit()
+                    target_cursor.close()
+                    target_conn.close()
+                    
+                    print(f"[{self.current_node_id}]   🔄 Synced lock to recovered Node {target_node}")
+                    
+                    # Update tracking to include this node
+                    if resource_id in self._active_locks and target_node not in self._active_locks[resource_id]:
+                        self._active_locks[resource_id].append(target_node)
+                    
+                except Exception as e:
+                    # Node still down or sync failed, ignore
+                    pass
+                    
+        except Exception as e:
+            # Source node issue, can't sync
+            pass
     
     def check_lock(self, resource_id: str, node: int) -> Optional[Dict[str, Any]]:
         """
