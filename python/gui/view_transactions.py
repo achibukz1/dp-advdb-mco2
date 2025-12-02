@@ -117,18 +117,27 @@ def render(get_node_for_account, log_transaction):
     if fetch_button:
         start_time = time.time()
         
-        # Process recovery logs before fetching data
-        with st.spinner("Processing recovery logs..."):
+        # Execute global recovery with checkpoints before fetching data
+        with st.spinner("Processing pending recovery logs..."):
             try:
-                from python.utils.recovery_manager import RecoveryManager
-                recovery_manager = RecoveryManager()
+                from python.utils.recovery_manager import execute_global_recovery
+                recovery_result = execute_global_recovery()
                 
-                # Process recovery logs for all available nodes
-                print("[VIEW_TRANSACTIONS] Starting recovery log processing before data fetch...")
-                recovery_manager.process_all_recovery_logs()
-                print("[VIEW_TRANSACTIONS] Recovery log processing completed")
-                
+                if recovery_result.get('lock_acquired', False):
+                    if recovery_result['total_logs'] > 0:
+                        if recovery_result['recovered'] > 0:
+                            st.success(f"Processed {recovery_result['recovered']} recovery logs successfully")
+                        if recovery_result['failed'] > 0:
+                            st.warning(f"{recovery_result['failed']} recovery logs failed - check system logs")
+                        elif recovery_result['recovered'] == 0:
+                            st.info("No recovery logs needed processing")
+                    else:
+                        st.info("No new recovery logs to process")
+                else:
+                    st.info("Recovery already running by another process")
+                    
             except Exception as recovery_error:
+                st.warning(f"Recovery processing encountered an issue: {str(recovery_error)}")
                 print(f"[VIEW_TRANSACTIONS] Recovery processing failed: {str(recovery_error)}")
                 # Continue with fetch even if recovery fails
         
