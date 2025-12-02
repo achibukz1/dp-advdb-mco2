@@ -44,16 +44,23 @@ def render(get_node_for_account, log_transaction):
         isolation_level = "REPEATABLE READ"
 
     # Show transaction info button
-    if st.button("Preview Transaction"):
+    preview_button = st.button("Preview Transaction", use_container_width=True)
+
+    if preview_button:
         try:
-            # Search for transaction on Node 1 (central node)
+            # Clear cache before fetching to get fresh data
+            from python.db.db_config import _query_cache
+            _query_cache.clear()
+
+            # Search for transaction on Node 1 (central node) with ttl=0 to force fresh data
             search_query = f"SELECT * FROM trans WHERE trans_id = {trans_id}"
-            found_data = fetch_data(search_query, node=1)
+            found_data = fetch_data(search_query, node=1, ttl=0)
 
             if found_data.empty:
                 st.warning(f"Transaction ID {trans_id} not found")
             else:
-                st.success(f"Found transaction")
+                from datetime import datetime
+                st.success(f"Found transaction (refreshed at {datetime.now().strftime('%H:%M:%S')})")
                 st.dataframe(found_data)
 
         except Exception as e:
@@ -214,6 +221,20 @@ def render(get_node_for_account, log_transaction):
                     st.success(f"{committed_count} update transaction(s) committed successfully!")
                     st.toast(f"{committed_count} transaction(s) committed successfully")
                     
+                    # Clear all caches to force refresh of data
+                    from python.db.db_config import _query_cache
+                    _query_cache.clear()
+
+                    # Clear Streamlit's connection cache
+                    try:
+                        st.cache_data.clear()
+                        st.cache_resource.clear()
+                    except:
+                        pass
+
+                    # Trigger page rerun to refresh the dataframe
+                    st.rerun()
+
             except Exception as e:
                 st.error(f"Update commit process failed: {str(e)}")
         else:
@@ -252,6 +273,17 @@ def render(get_node_for_account, log_transaction):
 
                 st.info(f"{rolled_back_count} update transaction(s) rolled back - no changes made or logged")
                 st.toast(f"{rolled_back_count} transaction(s) rolled back")
+
+                # Clear all caches and refresh
+                from python.db.db_config import _query_cache
+                _query_cache.clear()
+                try:
+                    st.cache_data.clear()
+                    st.cache_resource.clear()
+                except:
+                    pass
+                st.rerun()
+
             except Exception as e:
                 st.error(f"Rollback failed: {str(e)}")
         else:
@@ -300,10 +332,10 @@ def render(get_node_for_account, log_transaction):
             search_query = f"SELECT * FROM trans WHERE trans_id = {trans_id}"
             
             with st.spinner(f"Searching for transaction {trans_id}..."):
-                # Try Node 1 first
+                # Try Node 1 first with ttl=0 to force fresh data
                 if node_status.get(1, False):
                     try:
-                        found_data = fetch_data(search_query, node=1)
+                        found_data = fetch_data(search_query, node=1, ttl=0)
                         if not found_data.empty:
                             st.info("Transaction found on Node 1 (central)")
                             account_id = int(found_data.iloc[0]['account_id'])
@@ -315,7 +347,7 @@ def render(get_node_for_account, log_transaction):
                     for node in [2, 3]:
                         if node_status.get(node, False):
                             try:
-                                found_data = fetch_data(search_query, node=node)
+                                found_data = fetch_data(search_query, node=node, ttl=0)
                                 if not found_data.empty:
                                     st.info(f"Transaction found on Node {node}")
                                     account_id = int(found_data.iloc[0]['account_id'])

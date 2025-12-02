@@ -117,6 +117,15 @@ def render(get_node_for_account, log_transaction):
     if fetch_button:
         start_time = time.time()
         
+        # Clear all caches to force fresh data retrieval
+        from python.db.db_config import _query_cache
+        _query_cache.clear()
+        try:
+            st.cache_data.clear()
+            st.cache_resource.clear()
+        except:
+            pass
+
         # Determine strategy based on node availability
         online_nodes = [node for node, status in node_status.items() if status]
         offline_nodes = [node for node, status in node_status.items() if not status]
