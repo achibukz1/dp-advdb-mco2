@@ -1,16 +1,6 @@
-"""
-MySQL-Based Distributed Lock Manager
-
-This module provides distributed locking using MySQL tables across multiple database nodes.
-Unlike Redis-based locking, this approach uses the existing MySQL infrastructure,
-making it ideal for Google Cloud deployments without additional services.
-
-Each MySQL node has a 'distributed_lock' table that tracks lock ownership.
-The lock manager coordinates locks across all three nodes to ensure consistency.
-"""
-
 import mysql.connector
 import time
+import threading
 from datetime import datetime
 from typing import Optional, Dict, Any
 
@@ -36,6 +26,12 @@ class DistributedLockManager:
         self.current_node_id = current_node_id
         self.available = True
         self._active_locks = {}  # Track locks we currently hold: {resource_id: [node_list]}
+        
+        # Periodic cleanup thread (always enabled)
+        self._cleanup_running = True
+        self._cleanup_thread = threading.Thread(target=self._periodic_cleanup, daemon=True)
+        self._cleanup_thread.start()
+        print(f"[{self.current_node_id}] Periodic cleanup thread started (5-minute interval)")
     
     def _get_connection(self, node: int) -> mysql.connector.connection.MySQLConnection:
         """
@@ -559,12 +555,82 @@ class DistributedLockManager:
         """
         return self.available
     
+    def _periodic_cleanup(self):
+        """
+        Background thread that periodically cleans up stale locks every 5 minutes.
+        Runs continuously until _cleanup_running is set to False.
+        """
+        cleanup_interval = 300  # 5 minutes in seconds
+        
+        while self._cleanup_running:
+            time.sleep(cleanup_interval)
+            
+            if not self._cleanup_running:
+                break
+            
+            self._cleanup_stale_locks()
+    
+    def _cleanup_stale_locks(self):
+        """
+        Clean up stale locks (older than 120 seconds) from all nodes.
+        Logs a summary of the cleanup operation.
+        """
+        stale_timeout = 120  # 120 seconds
+        total_cleaned = 0
+        cleanup_start = time.time()
+        
+        # SQL to delete stale locks
+        delete_stale_sql = """
+        DELETE FROM distributed_lock 
+        WHERE TIMESTAMPDIFF(SECOND, lock_time, NOW()) > %s
+        """
+        
+        for node_num in self.node_configs.keys():
+            conn = None
+            cursor = None
+            
+            try:
+                conn = self._get_connection(node_num)
+                cursor = conn.cursor()
+                
+                cursor.execute(delete_stale_sql, (stale_timeout,))
+                deleted_count = cursor.rowcount
+                conn.commit()
+                
+                if deleted_count > 0:
+                    total_cleaned += deleted_count
+            
+            except Exception as e:
+                # Skip this cleanup cycle if any node fails
+                print(f"[{self.current_node_id}] Cleanup skipped: Error on Node {node_num}: {e}")
+                if cursor:
+                    cursor.close()
+                if conn:
+                    conn.close()
+                return  # Skip entire cleanup cycle
+            
+            finally:
+                if cursor:
+                    cursor.close()
+                if conn:
+                    conn.close()
+        
+        # Log summary
+        cleanup_duration = time.time() - cleanup_start
+        print(f"[{self.current_node_id}] Cleanup complete: Removed {total_cleaned} stale locks from {len(self.node_configs)} nodes (took {cleanup_duration:.2f}s)")
+    
     def close(self):
         """
-        Cleanup: release all locks and close connections.
+        Cleanup: stop periodic cleanup thread, release all locks and close connections.
         Should be called before shutting down the application.
         """
         print(f"[{self.current_node_id}] Closing lock manager and releasing all locks...")
+        
+        # Stop cleanup thread
+        self._cleanup_running = False
+        if self._cleanup_thread.is_alive():
+            self._cleanup_thread.join(timeout=2)
+        
         self.release_all_locks()
 
 
