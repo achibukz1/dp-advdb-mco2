@@ -11,6 +11,24 @@ def render():
     All data is aggregated from Node 1 (central node).
     """)
     
+    # Add refresh button to force cache clearing and fresh data
+    col1, col2 = st.columns([4, 1])
+    with col1:
+        st.markdown("")  # Empty space
+    with col2:
+        refresh_button = st.button("🔄 Refresh Data", use_container_width=True, help="Get latest data from database")
+
+    # Clear cache and force fresh data if refresh button is clicked
+    if refresh_button:
+        from python.db.db_config import _query_cache
+        _query_cache.clear()
+        try:
+            st.cache_data.clear()
+            st.cache_resource.clear()
+        except:
+            pass
+        st.rerun()
+
     try:
         # ============================================================================
         # TRANSACTION TYPE BREAKDOWN
@@ -26,8 +44,9 @@ def render():
         FROM trans
         GROUP BY type
         """
-        type_data = fetch_data(type_query, node=1)
-        
+        # Force fresh data by setting ttl=0
+        type_data = fetch_data(type_query, node=1, ttl=0)
+
         if not type_data.empty:
             col1, col2 = st.columns(2)
             
@@ -67,7 +86,7 @@ def render():
             GROUP BY amount_range
             ORDER BY MIN(amount)
             """
-            ranges_data = fetch_data(ranges_query, node=1)
+            ranges_data = fetch_data(ranges_query, node=1, ttl=0)
             if not ranges_data.empty:
                 st.dataframe(ranges_data, use_container_width=True, hide_index=True)
         
@@ -79,7 +98,7 @@ def render():
                 MAX(amount) as max_amount
             FROM trans
             """
-            minmax_data = fetch_data(minmax_query, node=1)
+            minmax_data = fetch_data(minmax_query, node=1, ttl=0)
             if not minmax_data.empty:
                 st.metric("Minimum Amount", f"${minmax_data['min_amount'][0]:,.2f}")
                 st.metric("Maximum Amount", f"${minmax_data['max_amount'][0]:,.2f}")
@@ -101,8 +120,8 @@ def render():
         ORDER BY year DESC
         LIMIT 10
         """
-        year_data = fetch_data(year_query, node=1)
-        
+        year_data = fetch_data(year_query, node=1, ttl=0)
+
         if not year_data.empty:
             year_data_formatted = year_data.copy()
             year_data_formatted['total_amount'] = year_data_formatted['total_amount'].apply(lambda x: f"${x:,.2f}")

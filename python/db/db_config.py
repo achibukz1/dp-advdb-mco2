@@ -399,8 +399,8 @@ def fetch_data(query: str, node: int, ttl: int = 9999) -> pd.DataFrame:
         data = cursor.fetchall()
         result_df = pd.DataFrame(data)
 
-        # Store in cache
-        if CACHE_ENABLED:
+        # Store in cache (skip if ttl=0 to avoid caching fresh queries)
+        if CACHE_ENABLED and ttl > 0:
             _query_cache[cache_key] = {
                 'timestamp': datetime.now(),
                 'data': result_df.copy(),

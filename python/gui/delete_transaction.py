@@ -334,6 +334,18 @@ def render(get_node_for_account, log_transaction):
                     st.success(f"{committed_count} delete transaction(s) committed successfully!")
                     st.toast(f"{committed_count} transaction(s) deleted successfully")
                     
+                    # Clear all caches to force refresh of data
+                    from python.db.db_config import _query_cache
+                    _query_cache.clear()
+                    try:
+                        st.cache_data.clear()
+                        st.cache_resource.clear()
+                    except:
+                        pass
+
+                    # Trigger page rerun to refresh the dataframe
+                    st.rerun()
+
             except Exception as e:
                 st.error(f"Delete commit process failed: {str(e)}")
         else:
@@ -372,6 +384,16 @@ def render(get_node_for_account, log_transaction):
 
                 st.info(f"{rolled_back_count} delete transaction(s) rolled back - data not deleted, no changes logged")
                 st.toast(f"{rolled_back_count} transaction(s) rolled back")
+
+                # Clear all caches and refresh
+                from python.db.db_config import _query_cache
+                _query_cache.clear()
+                try:
+                    st.cache_data.clear()
+                    st.cache_resource.clear()
+                except:
+                    pass
+                st.rerun()
             except Exception as e:
                 st.error(f"Rollback failed: {str(e)}")
         else:
