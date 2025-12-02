@@ -117,6 +117,21 @@ def render(get_node_for_account, log_transaction):
     if fetch_button:
         start_time = time.time()
         
+        # Process recovery logs before fetching data
+        with st.spinner("Processing recovery logs..."):
+            try:
+                from python.utils.recovery_manager import RecoveryManager
+                recovery_manager = RecoveryManager()
+                
+                # Process recovery logs for all available nodes
+                print("[VIEW_TRANSACTIONS] Starting recovery log processing before data fetch...")
+                recovery_manager.process_all_recovery_logs()
+                print("[VIEW_TRANSACTIONS] Recovery log processing completed")
+                
+            except Exception as recovery_error:
+                print(f"[VIEW_TRANSACTIONS] Recovery processing failed: {str(recovery_error)}")
+                # Continue with fetch even if recovery fails
+        
         # Clear all caches to force fresh data retrieval
         from python.db.db_config import _query_cache
         _query_cache.clear()
