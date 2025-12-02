@@ -415,7 +415,7 @@ def render(get_node_for_account, log_transaction):
             # Acquire distributed lock across all available nodes before deleting
             with st.spinner(f"Acquiring distributed lock on transaction {trans_id}..."):
                 lock_acquired = st.session_state.lock_manager.acquire_multi_node_lock(
-                    resource_id, nodes=[1, 2, 3], timeout=30
+                    resource_id, nodes=[1, 2, 3], timeout=60
                 )
 
                 if not lock_acquired:

@@ -370,7 +370,7 @@ def render(get_node_for_account, log_transaction):
             # Step 2: Acquire distributed lock BEFORE querying max_trans_id (prevents race condition)
             with st.spinner(f"Acquiring distributed lock across all nodes..."):
                 lock_acquired = st.session_state.lock_manager.acquire_multi_node_lock(
-                    resource_id, nodes=[1, 2, 3], timeout=30
+                    resource_id, nodes=[1, 2, 3], timeout=60
                 )
 
                 if not lock_acquired:

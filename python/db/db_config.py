@@ -356,7 +356,11 @@ def get_db_connection(node):
             autocommit=False,
             connect_timeout=10  # Add timeout to prevent hanging
         )
-        print(f"[DB_CONFIG] Successfully connected to {config_type} Node {node}")
+        # Increase MySQL lock wait timeout to allow transactions to wait longer for locks
+        cursor = conn.cursor()
+        cursor.execute("SET SESSION innodb_lock_wait_timeout = 120")
+        cursor.close()
+        print(f"[DB_CONFIG] Successfully connected to {config_type} Node {node} (lock timeout: 120s)")
         return conn
     except mysql.connector.Error as db_err:
         error_code = db_err.errno if hasattr(db_err, 'errno') else 'Unknown'

@@ -59,7 +59,7 @@ class DistributedLockManager:
         except Exception as e:
             raise Exception(f"Failed to connect to Node {node}: {e}")
     
-    def acquire_lock(self, resource_id: str, node: int, timeout: int = 120) -> bool:
+    def acquire_lock(self, resource_id: str, node: int, timeout: int = 180) -> bool:
         """
         Acquire a lock on a specific resource at a specific node.
         
@@ -171,7 +171,7 @@ class DistributedLockManager:
                         # Lock is held by another active session - rollback and wait
                         conn.rollback()
                         print(f"[{self.current_node_id}] Waiting for lock on {resource_id} at Node {node} (held by {result['locked_by']})")
-                        time.sleep(0.5)
+                        time.sleep(1.0)  # Wait 1 second between retries
                         continue
                 
                 except Exception as e:
@@ -280,7 +280,7 @@ class DistributedLockManager:
             print(f"[{self.current_node_id}] Error checking lock on {resource_id} at Node {node}: {e}")
             return False
     
-    def acquire_multi_node_lock(self, resource_id: str, nodes: list, timeout: int = 30) -> bool:
+    def acquire_multi_node_lock(self, resource_id: str, nodes: list, timeout: int = 60) -> bool:
         """
         Acquire locks on the same resource across multiple available nodes.
         
