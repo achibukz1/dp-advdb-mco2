@@ -28,6 +28,8 @@ class NodePinger:
         self.running = False
         self.thread = None
         self.node_status = {1: False, 2: False, 3: False}
+        self._last_check_time = 0
+        self._check_cache_duration = 2  # Cache status checks for 2 seconds
 
     def check_node(self, node):
         """
@@ -108,12 +110,23 @@ class NodePinger:
             self.thread.join(timeout=self.interval + 1)
         print("Node pinger stopped")
 
-    def get_status(self):
+    def get_status(self, force_refresh=False):
         """
-        Get current node status
+        Get current node status with optional caching
+
+        Args:
+            force_refresh: Force a fresh check even if cache is valid
 
         Returns:
             dict: Node status dictionary {node_id: is_online}
         """
+        current_time = time.time()
+
+        # Use cached status if checked recently (unless force refresh)
+        if not force_refresh and (current_time - self._last_check_time) < self._check_cache_duration:
+            return self.node_status.copy()
+
+        # Refresh status
+        self._last_check_time = current_time
         return self.node_status.copy()
 

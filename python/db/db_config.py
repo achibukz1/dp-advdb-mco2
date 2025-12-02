@@ -320,7 +320,10 @@ def get_db_connection(node: int) -> mysql.connector.connection.MySQLConnection:
             password=config["password"],
             database=config["database"],
             autocommit=False,
-            connect_timeout=10
+            connect_timeout=10,  # Reduced from 10s to 5s for faster failure detection
+            pool_name=f"node{node}_pool",  # Enable connection pooling
+            pool_size=5,  # Pool of 5 connections per node
+            pool_reset_session=True
         )
         print(f"[DB_CONFIG] Successfully connected to {config_type} Node {node}")
         return conn

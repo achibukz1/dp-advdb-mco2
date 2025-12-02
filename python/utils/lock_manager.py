@@ -171,12 +171,16 @@ class DistributedLockManager:
                         # Lock is held by another active session - rollback and wait
                         conn.rollback()
                         print(f"[{self.current_node_id}] Waiting for lock on {resource_id} at Node {node} (held by {result['locked_by']})")
-                        time.sleep(0.5)
+                        time.sleep(0.2)  # Reduced from 0.5s for faster retry in cloud
                         continue
                 
                 except Exception as e:
                     print(f"[{self.current_node_id}] Error acquiring lock on Node {node}: {e}")
-                    conn.rollback()
+                    try:
+                        conn.rollback()
+                    except:
+                        pass
+                    # Fail fast on connection errors rather than retrying
                     return False
         
         except Exception as e:

@@ -287,7 +287,7 @@ def render(get_node_for_account, log_transaction):
             # Acquire distributed lock across all available nodes before updating
             with st.spinner(f"Acquiring distributed lock on transaction {trans_id}..."):
                 lock_acquired = st.session_state.lock_manager.acquire_multi_node_lock(
-                    resource_id, nodes=[1, 2, 3], timeout=30
+                    resource_id, nodes=[1, 2, 3], timeout=20  # Reduced from 30s to 10s for Cloud SQL
                 )
 
                 if not lock_acquired:

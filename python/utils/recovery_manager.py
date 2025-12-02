@@ -583,6 +583,30 @@ class RecoveryManager:
                 cursor.close()
             if connection:
                 connection.close()
+
+    def _quick_count_pending_logs(self) -> int:
+        """Quick count of pending recovery logs across all nodes without acquiring locks"""
+        total = 0
+        try:
+            from python.db.db_config import get_db_connection
+
+            # Check Node 1 only (central node) for a quick estimate
+            # This is faster than checking all nodes
+            conn = get_db_connection(1)
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM recovery_log WHERE status = 'PENDING'")
+            result = cursor.fetchone()
+            total = result[0] if result else 0
+            cursor.close()
+            conn.close()
+
+        except Exception as e:
+            print(f"Quick count check failed: {e}")
+            # Return -1 to signal check failure (proceed with full recovery)
+            return -1
+
+        return total
+
     def create_checkpoint_table_if_not_exists(self):
         """Create global checkpoint table if it doesn't exist"""
         connection = None
@@ -784,6 +808,16 @@ class RecoveryManager:
             'checkpoint_updates': {}
         }
         
+        # Quick pre-check: count pending logs across all nodes before acquiring lock
+        # This avoids expensive lock acquisition when there's nothing to recover
+        try:
+            total_pending = self._quick_count_pending_logs()
+            if total_pending == 0:
+                print("Quick check: No pending recovery logs found. Skipping recovery.")
+                return recovery_results
+        except Exception as e:
+            print(f"Quick check failed, proceeding with full recovery: {e}")
+
         # Ensure checkpoint table exists
         self.create_checkpoint_table_if_not_exists()
         
