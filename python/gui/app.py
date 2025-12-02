@@ -146,33 +146,37 @@ def main():
     if page == "Home":
         st.title("Distributed Database Transaction Manager")
 
-        st.markdown(f"""
+        st.markdown("""
         ## Welcome to the Transaction Manager
-        
-        Connected to Node {NODE_USE}
-                    
         """)
 
         # Show node status
         st.markdown("---")
-        st.subheader("Current Node Status")
+        st.subheader("Node Status")
 
+        # Check node connectivity
+        pinger = NodePinger()
+        node_status = pinger.ping_all_nodes()
+        
         col1, col2, col3 = st.columns(3)
-
-        try:
-            node1_count = fetch_data("SELECT COUNT(*) as count FROM trans", node=1)['count'][0]
-            node2_count = fetch_data("SELECT COUNT(*) as count FROM trans", node=2)['count'][0]
-            node3_count = fetch_data("SELECT COUNT(*) as count FROM trans", node=3)['count'][0]
-
-            with col1:
-                st.metric("Node 1 (Central)", "Active", f"{node1_count:,} rows")
-            with col2:
-                st.metric("Node 2 (Even Accounts)", "Active", f"{node2_count:,} rows")
-            with col3:
-                st.metric("Node 3 (Odd Accounts)", "Active", f"{node3_count:,} rows")
+        
+        with col1:
+            if node_status.get(1, False):
+                st.success("Node 1 Online")
+            else:
+                st.error("Node 1 Offline")
                 
-        except Exception as e:
-            st.error(f"Database connection issue: {str(e)}")
+        with col2:
+            if node_status.get(2, False):
+                st.success("Node 2 Online")
+            else:
+                st.error("Node 2 Offline")
+                
+        with col3:
+            if node_status.get(3, False):
+                st.success("Node 3 Online")
+            else:
+                st.error("Node 3 Offline")
         
         # Recovery system is now manual-only (triggered before each transaction)
 

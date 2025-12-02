@@ -30,14 +30,8 @@ def render(get_node_for_account, log_transaction):
     highest trans_id and automatically routes the insert to the appropriate node.
     """)
 
-    # Configuration
-    isolation_level = st.selectbox(
-        "Isolation Level",
-        ["READ UNCOMMITTED", "READ COMMITTED", "REPEATABLE READ", "SERIALIZABLE"],
-        index=1,
-        key='insert_isolation',
-        help="Controls transaction isolation level"
-    )
+    # Configuration - hardcoded to REPEATABLE READ
+    isolation_level = "REPEATABLE READ"
 
     # Transaction form
     st.subheader("Transaction Details")
@@ -128,11 +122,11 @@ def render(get_node_for_account, log_transaction):
                             try:
                                 # Lock already held from INSERT phase - just commit and replicate
                                 # Commit on primary node first
-                                with st.spinner(f"Committing on Node {primary_node}..."):
+                                with st.spinner("Committing transaction..."):
                                     conn.commit()
                                     commit_successful = True
                                 
-                                st.info(f"Transaction committed on Node {primary_node}")
+                                print(f"[ADD_TRANSACTION] Transaction committed on Node {primary_node}")
                                 
                             except Exception as commit_error:
                                 error_str = str(commit_error)
@@ -229,7 +223,8 @@ def render(get_node_for_account, log_transaction):
                             
                             for target_node, result in replication_results:
                                 if result['status'] == 'error':
-                                    st.error(f"Replication to Node {target_node} failed: {result['message']}")
+                                    st.error(f"Transaction replication failed: {result['message']}")
+                                    print(f"[ADD_TRANSACTION] Replication to Node {target_node} failed: {result['message']}")
                                     if result['logged']:
                                         st.warning(f"Recovery logged: {result['recovery_action']}")
                                     else:
@@ -278,7 +273,7 @@ def render(get_node_for_account, log_transaction):
                             # 2PL SHRINKING PHASE: Release lock after commit and replication complete
                             if lock_acquired:
                                 st.session_state.lock_manager.release_multi_node_lock(resource_id, nodes=[1, 2, 3])
-                                st.info("Lock released (2PL shrinking phase)")
+                                print("[ADD_TRANSACTION] Lock released (2PL shrinking phase)")
                     else:
                         # This is a replica transaction (same trans_id already processed)
                         # Just commit without acquiring lock (lock already held by primary)
@@ -382,7 +377,7 @@ def render(get_node_for_account, log_transaction):
                     st.error("Failed to acquire lock. Another user may be inserting. Please try again.")
                     st.stop()
                 
-                st.info(f"Lock acquired successfully by session {st.session_state.lock_manager.current_node_id}")
+                print(f"[ADD_TRANSACTION] Lock acquired successfully by session {st.session_state.lock_manager.current_node_id}")
             
             # Step 3: Check node status using server pinger
             node_status = st.session_state.node_pinger.get_status()
@@ -393,10 +388,10 @@ def render(get_node_for_account, log_transaction):
             # Priority: Node 1 > Partition Node > Any Available Node
             if node_status.get(1, False):  # Node 1 is online (highest priority)
                 primary_node = 1
-                st.info("Using Node 1 (Central) as primary node")
+                print("[ADD_TRANSACTION] Using Node 1 (Central) as primary node")
             elif node_status.get(partition_node, False):  # Partition node is online
                 primary_node = partition_node
-                st.warning(f"Node 1 offline - Using Node {partition_node} (partition node) as primary")
+                print(f"[ADD_TRANSACTION] Node 1 offline - Using Node {partition_node} (partition node) as primary")
             else:
                 # Find any available node as last resort
                 primary_node = None
@@ -406,34 +401,29 @@ def render(get_node_for_account, log_transaction):
                         break
                 
                 if primary_node is None:
-                    st.error("All nodes are offline. Cannot proceed with transaction.")
+                    st.error("Database is currently unavailable. Please try again later.")
+                    print("[ADD_TRANSACTION] All nodes are offline. Cannot proceed with transaction.")
                     st.stop()
                 else:
-                    st.error(f"Both Node 1 and Node {partition_node} are offline - Using Node {primary_node} as emergency primary")
+                    st.warning("Using backup database connection. Transaction may take longer.")
+                    print(f"[ADD_TRANSACTION] Both Node 1 and Node {partition_node} are offline - Using Node {primary_node} as emergency primary")
             
-            # Show node status
-            with st.expander("Current Node Status"):
-                status_data = []
-                for node in [1, 2, 3]:
-                    is_online = node_status.get(node, False)
-                    if node == primary_node:
-                        role = "Primary (Active)"
-                    elif node == 1 and not is_online:
-                        role = "Central (Offline - will recover)"
-                    elif node == partition_node and node != primary_node:
-                        if is_online:
-                            role = "Partition (Standby)"
-                        else:
-                            role = "Partition (Offline - will recover)"
+            # Log node status to backend only
+            for node in [1, 2, 3]:
+                is_online = node_status.get(node, False)
+                if node == primary_node:
+                    role = "Primary (Active)"
+                elif node == 1 and not is_online:
+                    role = "Central (Offline - will recover)"
+                elif node == partition_node and node != primary_node:
+                    if is_online:
+                        role = "Partition (Standby)"
                     else:
-                        role = "Replica" if is_online else "Offline (will recover)"
-                    
-                    status_data.append({
-                        'Node': f"Node {node}",
-                        'Status': 'Online' if is_online else 'Offline',
-                        'Role': role
-                    })
-                st.dataframe(pd.DataFrame(status_data))
+                        role = "Partition (Offline - will recover)"
+                else:
+                    role = "Replica" if is_online else "Offline (will recover)"
+                
+                print(f"[ADD_TRANSACTION] Node {node}: {'Online' if is_online else 'Offline'} - {role}")
 
             # Step 4: Query max_trans_id AFTER acquiring lock (prevents concurrent ID collision)
             with st.spinner(f"Checking available nodes for highest trans_id..."):
@@ -460,7 +450,8 @@ def render(get_node_for_account, log_transaction):
                     st.dataframe(pd.DataFrame(node_data))
                     st.success(f"Selected highest trans_id: {max_result['max_trans_id']} → Next: {next_trans_id}")
 
-            with st.spinner(f"Preparing insert transaction on Node {primary_node}..."):
+            with st.spinner("Preparing insert transaction..."):
+                print(f"[ADD_TRANSACTION] Preparing insert transaction on Node {primary_node}...")
                 # Build INSERT query with trans_id
                 insert_query = f"""
                 INSERT INTO trans (trans_id, account_id, newdate, type, operation, amount, k_symbol)
@@ -496,7 +487,8 @@ def render(get_node_for_account, log_transaction):
 
             duration = time.time() - start_time
 
-            st.success(f"Insert transaction prepared with trans_id={next_trans_id} on Node {primary_node} in {duration:.3f}s")
+            st.success(f"Insert transaction prepared with trans_id={next_trans_id} in {duration:.3f}s")
+            print(f"[ADD_TRANSACTION] Insert transaction prepared with trans_id={next_trans_id} on Node {primary_node} in {duration:.3f}s")
             st.warning("Transaction active - Click 'Commit' to finalize insertion or 'Rollback' to cancel")
 
             # Show preview
@@ -516,9 +508,9 @@ def render(get_node_for_account, log_transaction):
                 if primary_node == 1:
                     st.caption(f"Insert prepared on Node 1 (central) - will replicate to Node {partition_node} ({'even' if partition_node == 2 else 'odd'} accounts) on commit")
                 elif primary_node == partition_node:
-                    st.caption(f"Insert prepared on Node {primary_node} (natural partition for {'even' if partition_node == 2 else 'odd'} accounts) - will replicate to Node 1 (central) on commit")
+                    print(f"[ADD_TRANSACTION] Insert prepared on Node {primary_node} (natural partition for {'even' if partition_node == 2 else 'odd'} accounts) - will replicate to Node 1 (central) on commit")
                 else:
-                    st.caption(f"Insert prepared on Node {primary_node} (emergency primary) - will replicate to Node 1 (central) and Node {partition_node} (natural partition) on commit")
+                    print(f"[ADD_TRANSACTION] Insert prepared on Node {primary_node} (emergency primary) - will replicate to Node 1 (central) and Node {partition_node} (natural partition) on commit")
 
         except Exception as e:
             # Don't log failed transactions - only log successful commits

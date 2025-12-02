@@ -40,12 +40,8 @@ def render(get_node_for_account, log_transaction):
 
     with col2:
         new_operation = st.text_input("New Operation", placeholder="e.g., Credit in Cash")
-        isolation_level = st.selectbox(
-            "Isolation Level",
-            ["READ UNCOMMITTED", "READ COMMITTED", "REPEATABLE READ", "SERIALIZABLE"],
-            index=1,
-            key='update_isolation'
-        )
+        # Hardcode isolation level to REPEATABLE READ
+        isolation_level = "REPEATABLE READ"
 
     # Show transaction info button
     if st.button("Preview Transaction"):

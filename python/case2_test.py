@@ -7,20 +7,40 @@ import threading
 import time
 from datetime import datetime
 import pandas as pd
+from dotenv import load_dotenv
 from python.utils.lock_manager import DistributedLockManager
-from python.db.db_config import get_node_config, NODE_CONFIGS
 
 class MixedReadWriteTest:
     def __init__(self):
         self.results = {}
         self.lock = threading.Lock()
         
-        # Get database configs from db_config.py
-        # Build node_configs dict for lock manager
+        # Load environment variables from .env file
+        load_dotenv()
+
+        # Build node configurations directly from .env file
         self.node_configs = {
-            1: get_node_config(1),
-            2: get_node_config(2),
-            3: get_node_config(3)
+            1: {
+                "host": os.getenv('LOCAL_DB_HOST', 'localhost'),
+                "port": int(os.getenv('LOCAL_DB_PORT', '3306')),
+                "user": os.getenv('LOCAL_DB_USER', 'user'),
+                "password": os.getenv('LOCAL_DB_PASSWORD', 'rootpass'),
+                "database": os.getenv('LOCAL_DB_NAME', 'node1_db')
+            },
+            2: {
+                "host": os.getenv('LOCAL_DB_HOST_NODE2', 'localhost'),
+                "port": int(os.getenv('LOCAL_DB_PORT_NODE2', '3307')),
+                "user": os.getenv('LOCAL_DB_USER_NODE2', 'user'),
+                "password": os.getenv('LOCAL_DB_PASSWORD_NODE2', 'rootpass'),
+                "database": os.getenv('LOCAL_DB_NAME_NODE2', 'node2_db')
+            },
+            3: {
+                "host": os.getenv('LOCAL_DB_HOST_NODE3', 'localhost'),
+                "port": int(os.getenv('LOCAL_DB_PORT_NODE3', '3308')),
+                "user": os.getenv('LOCAL_DB_USER_NODE3', 'user'),
+                "password": os.getenv('LOCAL_DB_PASSWORD_NODE3', 'rootpass'),
+                "database": os.getenv('LOCAL_DB_NAME_NODE3', 'node3_db')
+            }
         }
         
         # Initialize distributed lock manager

@@ -21,13 +21,7 @@ def render(get_node_for_account, log_transaction):
     st.title("View Transactions (Read Operation)")
 
     st.markdown("""
-    Browse transaction records from the database. The system intelligently adapts to node availability:
-    
-    **Resilient Query Strategy:**
-    - **Specific Account**: Queries target partition node, falls back to Node 1 if offline
-    - **All Data (Node 1 online)**: Uses complete central database
-    - **All Data (Node 1 offline)**: Combines Node 2 + Node 3 for complete view
-    - **Always works** as long as at least one node is online
+    Browse transaction records from the database.
     """)
 
     # Configuration
@@ -52,19 +46,9 @@ def render(get_node_for_account, log_transaction):
             help="Select a single date or date range. Leave empty for all dates."
         )
 
-    # Check node status
+    # Check node status (backend only)
     pinger = NodePinger()
     node_status = pinger.ping_all_nodes()
-    
-    # Display node status
-    st.subheader("Node Status")
-    status_cols = st.columns(3)
-    for i, node in enumerate([1, 2, 3]):
-        with status_cols[i]:
-            if node_status.get(node, False):
-                st.success(f"Node {node} Online")
-            else:
-                st.error(f"Node {node} Offline")
 
     # Build query based on filters
     base_query = "SELECT * FROM trans WHERE 1=1"
@@ -138,12 +122,13 @@ def render(get_node_for_account, log_transaction):
         offline_nodes = [node for node, status in node_status.items() if not status]
         
         if not online_nodes:
-            st.error("All nodes are offline! Cannot retrieve data.")
+            st.error("Database is currently unavailable. Please try again later.")
             return
             
-        st.info(f"Online nodes: {online_nodes}, Offline nodes: {offline_nodes}")
+        # Log node status to backend only
+        print(f"[VIEW_TRANSACTIONS] Online nodes: {online_nodes}, Offline nodes: {offline_nodes}")
         
-        # Show applied filters for debugging
+        # Show applied filters (simplified)
         if account_id or trans_type != "All" or date_range:
             filters_applied = []
             if account_id:
@@ -169,44 +154,46 @@ def render(get_node_for_account, log_transaction):
                     
                     if target_node in online_nodes:
                         # Target node is online - query directly
-                        st.info(f"Querying Node {target_node} (target partition for account {account_id})")
+                        print(f"[VIEW_TRANSACTIONS] Querying Node {target_node} (target partition for account {account_id})")
                         data = fetch_data(base_query, node=target_node, ttl=0)
                         combined_data = pd.concat([combined_data, data], ignore_index=True)
                         query_sources.append(f"Node {target_node} (partition)")
                     else:
                         # Target node is offline - check Node 1 (central) if available
-                        st.warning(f"Target Node {target_node} is offline for account {account_id}")
+                        print(f"[VIEW_TRANSACTIONS] Target Node {target_node} is offline for account {account_id}")
                         
                         if 1 in online_nodes and target_node != 1:
-                            st.info("Searching Node 1 (central) as fallback...")
+                            print(f"[VIEW_TRANSACTIONS] Searching Node 1 (central) as fallback...")
                             data = fetch_data(base_query, node=1, ttl=0)
                             combined_data = pd.concat([combined_data, data], ignore_index=True)
                             query_sources.append("Node 1 (central fallback)")
                         else:
-                            st.error(f"Cannot query account {account_id}: both Node {target_node} and Node 1 are offline")
+                            st.error(f"Cannot retrieve data for account {account_id}. Please try again later.")
+                            print(f"[VIEW_TRANSACTIONS] Cannot query account {account_id}: both Node {target_node} and Node 1 are offline")
                             
                 else:
                     # Query all data - implement smart combination strategy
                     if 1 in online_nodes:
                         # Node 1 is online - it has complete data
-                        st.info("Node 1 online - querying complete central database")
+                        print("[VIEW_TRANSACTIONS] Node 1 online - querying complete central database")
                         data = fetch_data(query_without_limit, node=1, ttl=0)
                         combined_data = pd.concat([combined_data, data], ignore_index=True)
                         query_sources.append("Node 1 (complete)")
                         
                     else:
                         # Node 1 is offline - combine Node 2 and Node 3
-                        st.warning("Node 1 offline - combining partition nodes for complete view")
+                        print("[VIEW_TRANSACTIONS] Node 1 offline - combining partition nodes for complete view")
                         
                         for node in [2, 3]:
                             if node in online_nodes:
-                                st.info(f"Querying Node {node} partition data...")
+                                print(f"[VIEW_TRANSACTIONS] Querying Node {node} partition data...")
                                 data = fetch_data(query_without_limit, node=node, ttl=0)
                                 combined_data = pd.concat([combined_data, data], ignore_index=True)
                                 query_sources.append(f"Node {node} (partition)")
                         
                         if combined_data.empty:
-                            st.error("No partition nodes available - cannot retrieve complete data")
+                            st.error("Cannot retrieve complete data at this time. Please try again later.")
+                            print("[VIEW_TRANSACTIONS] No partition nodes available - cannot retrieve complete data")
                 
                 # Remove duplicates and apply limit
                 if not combined_data.empty:
@@ -216,7 +203,7 @@ def render(get_node_for_account, log_transaction):
                     final_count = len(combined_data)
                     
                     if initial_count != final_count:
-                        st.info(f"Removed {initial_count - final_count} duplicate records")
+                        print(f"[VIEW_TRANSACTIONS] Removed {initial_count - final_count} duplicate records")
                     
                     # Sort by trans_id and apply limit
                     combined_data = combined_data.sort_values('trans_id').head(limit)
@@ -228,26 +215,25 @@ def render(get_node_for_account, log_transaction):
             else:
                 st.success(f"Retrieved {len(combined_data)} rows in {duration:.3f}s")
                 
-                # Show data source information
-                st.info(f"Data sources: {', '.join(query_sources)}")
+                # Log data source information to backend
+                print(f"[VIEW_TRANSACTIONS] Data sources: {', '.join(query_sources)}")
                 
                 st.dataframe(combined_data, use_container_width=True)
                 
-                # Show strategy details
-                with st.expander("Query Strategy Details"):
-                    st.write(f"**Query Strategy**: {'Single node' if len(query_sources) == 1 else 'Multi-node combination'}")
-                    st.write(f"**Data Sources**: {', '.join(query_sources)}")
-                    st.write(f"**Duration**: {duration:.3f}s")
-                    st.write(f"**Timestamp**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-                    st.write(f"**Offline Nodes**: {offline_nodes if offline_nodes else 'None'}")
-                    st.write(f"**Records Retrieved**: {len(combined_data)}")
-                    
-                    if offline_nodes:
-                        st.warning(f"Some nodes were offline during this query: {offline_nodes}")
-                        if 1 in offline_nodes and len(online_nodes) > 1:
-                            st.info("Complete data reconstructed from partition nodes")
-                        elif 1 not in offline_nodes:
-                            st.info("Complete data available from central node")
+                # Log strategy details to backend only
+                print(f"[VIEW_TRANSACTIONS] Query Strategy: {'Single node' if len(query_sources) == 1 else 'Multi-node combination'}")
+                print(f"[VIEW_TRANSACTIONS] Data Sources: {', '.join(query_sources)}")
+                print(f"[VIEW_TRANSACTIONS] Duration: {duration:.3f}s")
+                print(f"[VIEW_TRANSACTIONS] Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                print(f"[VIEW_TRANSACTIONS] Offline Nodes: {offline_nodes if offline_nodes else 'None'}")
+                print(f"[VIEW_TRANSACTIONS] Records Retrieved: {len(combined_data)}")
+                
+                if offline_nodes:
+                    print(f"[VIEW_TRANSACTIONS] Some nodes were offline during this query: {offline_nodes}")
+                    if 1 in offline_nodes and len(online_nodes) > 1:
+                        print("[VIEW_TRANSACTIONS] Complete data reconstructed from partition nodes")
+                    elif 1 not in offline_nodes:
+                        print("[VIEW_TRANSACTIONS] Complete data available from central node")
                 
         except Exception as e:
             st.error(f"Error retrieving data: {str(e)}")
